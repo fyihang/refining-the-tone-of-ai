@@ -11,6 +11,7 @@ import glob
 import json
 import re
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +19,16 @@ from pathlib import Path
 PROFILES = ("general", "social", "academic", "fiction", "sop")
 TEXT_SUFFIXES = {".md", ".markdown", ".txt"}
 SENTENCE_BODY = r"[^\n。！？!?]"
+VERDICT_SEMANTICS = (
+    "A clear verdict means no configured pattern requires review; "
+    "it is not a prose-quality or authorship judgment."
+)
+PROFILE_SEVERITY_OVERRIDES = {
+    "academic": {"essence_claim": 1},
+    "fiction": {"fiction_cliche": 2},
+    "social": {"inflated_abstract_words": 2},
+    "sop": {"staged_sequence": 0, "rigid_enumeration": 0},
+}
 
 
 @dataclass(frozen=True)
@@ -146,7 +157,7 @@ def protected_spans(text: str) -> list[tuple[int, int]]:
 
 
 def quoted_spans(text: str) -> list[tuple[int, int]]:
-    pattern = re.compile(r"“[^”\n]*”|‘[^’\n]*’|\"[^\"\n]*\"|'[^'\n]*'")
+    pattern = re.compile(r"“.*?”|‘.*?’|「.*?」|『.*?』|\"[^\"\n]*\"|'[^'\n]*'", re.DOTALL)
     return [(match.start(), match.end()) for match in pattern.finditer(text)]
 
 
@@ -155,11 +166,8 @@ def contained_in(start: int, end: int, spans: list[tuple[int, int]]) -> bool:
 
 
 def is_exempt(
-    rule_id: str,
-    match_text: str,
     start: int,
     end: int,
-    profile: str,
     protected: list[tuple[int, int]],
     quoted: list[tuple[int, int]],
 ) -> bool:
@@ -167,18 +175,18 @@ def is_exempt(
         return True
     if contained_in(start, end, quoted):
         return True
-    if profile == "academic" and rule_id == "essence_claim" and match_text == "核心在于":
-        return True
-    if profile == "sop" and rule_id in {"staged_sequence", "rigid_enumeration"}:
-        return True
     return False
 
 
-def finding(rule: Rule, text: str, start: int, end: int, match_text: str) -> dict:
+def effective_severity(rule: Rule, profile: str) -> int:
+    return PROFILE_SEVERITY_OVERRIDES.get(profile, {}).get(rule.rule_id, rule.severity)
+
+
+def finding(rule: Rule, severity: int, text: str, start: int, end: int, match_text: str) -> dict:
     return {
         "rule": rule.rule_id,
         "label": rule.label,
-        "severity": rule.severity,
+        "severity": severity,
         "line": line_number(text, start),
         "match": match_text,
         "excerpt": excerpt(text, start, end),
@@ -194,6 +202,7 @@ def audit_text(text: str, profile: str = "general") -> dict:
     quoted = quoted_spans(text)
 
     for rule in RULES:
+        severity = effective_severity(rule, profile)
         matches: list[tuple[int, int, str]] = []
         if rule.pattern:
             matches.extend((match.start(), match.end(), match.group(0)) for match in rule.pattern.finditer(text))
@@ -207,19 +216,21 @@ def audit_text(text: str, profile: str = "general") -> dict:
                 start = index + len(term)
 
         for start, end, match_text in matches:
-            if not is_exempt(rule.rule_id, match_text, start, end, profile, protected, quoted):
-                findings.append(finding(rule, text, start, end, match_text))
+            if not is_exempt(start, end, protected, quoted):
+                findings.append(finding(rule, severity, text, start, end, match_text))
 
     findings.extend(audit_shape(text, sorted(protected + quoted)))
     findings.sort(key=lambda item: (item["line"], -item["severity"], item["rule"], item["match"]))
     score = sum(item["severity"] for item in findings)
     blockers = [item for item in findings if item["severity"] >= 3]
+    repeated_rules = Counter(item["rule"] for item in findings if item["severity"] > 0)
+    clustered = any(count >= 2 for count in repeated_rules.values())
     return {
         "profile": profile,
         "score": score,
         "finding_count": len(findings),
         "blocker_count": len(blockers),
-        "verdict": "review" if blockers or score > 2 else "clear",
+        "verdict": "review" if blockers or score > 2 or clustered else "clear",
         "findings": findings,
     }
 
@@ -373,7 +384,10 @@ def expand_input_paths(raw_paths: list[str]) -> list[Path]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Audit Chinese prose for known AI-flavored patterns.")
+    parser = argparse.ArgumentParser(
+        description="Audit Chinese prose for known AI-flavored patterns.",
+        epilog=VERDICT_SEMANTICS,
+    )
     parser.add_argument("paths", nargs="*", help="Text files, directories, or glob patterns")
     parser.add_argument("--stdin", action="store_true", help="Read one document from standard input")
     parser.add_argument("--profile", choices=PROFILES, default="general")
@@ -399,7 +413,18 @@ def main() -> int:
     failed = any(result["verdict"] == "review" for result in results.values())
 
     if args.json:
-        print(json.dumps({"schema_version": 1, "profile": args.profile, "results": results}, ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "profile": args.profile,
+                    "verdict_semantics": VERDICT_SEMANTICS,
+                    "results": results,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
     else:
         for path, result in results.items():
             print(
@@ -410,6 +435,7 @@ def main() -> int:
                 print(f"  L{item['line']} [{item['label']}] {item['match']}")
             if len(result["findings"]) > 12:
                 print(f"  ... {len(result['findings']) - 12} more")
+        print(f"Note: {VERDICT_SEMANTICS}")
 
     return 1 if args.fail_on_review and failed else 0
 
