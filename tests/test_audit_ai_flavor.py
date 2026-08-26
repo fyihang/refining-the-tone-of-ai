@@ -38,6 +38,12 @@ class AuditBehaviorTests(unittest.TestCase):
         self.assertEqual("clear", result["verdict"])
         self.assertNotIn("binary_contrast", {item["rule"] for item in result["findings"]})
 
+    def test_direct_quote_is_not_treated_as_editable_prose(self):
+        text = "报告原文写道：“这不是效率问题，而是系统问题。”"
+        result = audit.audit_text(text, profile="general")
+        self.assertEqual("clear", result["verdict"])
+        self.assertNotIn("binary_contrast", {item["rule"] for item in result["findings"]})
+
     def test_academic_profile_does_not_block_defined_core_phrase(self):
         text = "该方法的核心在于保持边界条件一致。"
         result = audit.audit_text(text, profile="academic")
