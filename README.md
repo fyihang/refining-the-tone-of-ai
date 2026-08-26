@@ -190,7 +190,10 @@ python "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_valid
 - `clear` 与 `review` 的判定边界。
 - 输入错误是否以清晰信息和正确退出码结束。
 
+## 许可证
+
+本项目采用 [GNU General Public License v3.0 only](LICENSE)（`GPL-3.0-only`）发布。你可以在该许可证规定的条件下使用、研究、修改和分发本项目；分发修改版本或衍生作品时，应当遵守 GPL v3 的相应义务。完整条款以仓库中的 [`LICENSE`](LICENSE) 文件为准。
+
 ## 支持项目
 
 如果这个 Skill 对你的中文写作工作有帮助，可以考虑为 [fyihang/refining-the-tone-of-ai](https://github.com/fyihang/refining-the-tone-of-ai) 点一个 Star，帮助更多使用者发现并改进它。
-
