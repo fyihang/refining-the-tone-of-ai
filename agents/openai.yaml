@@ -1,0 +1,4 @@
+interface:
+  display_name: "去 AI 味表达"
+  short_description: "清理模板化 AI 写作口癖、句式节奏和假互动式结尾"
+  default_prompt: "Use $remove-ai-flavor to revise this Chinese draft so it reads more naturally and less like AI-written text."
