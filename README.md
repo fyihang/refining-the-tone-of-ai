@@ -1,8 +1,8 @@
 # refining-the-tone-of-ai
 
-一个面向中文写作的 Codex Skill，用于减少模板化、机械化和过度润色造成的“AI 味”，同时保留原文的事实、立场、文体、约束和作者声音。
+一个面向中文写作的 Agent Skill，用于减少模板化、机械化和过度润色造成的“AI 味”，同时保留原文的事实、立场、文体、约束和作者声音。
 
-它采用“保留优先”的编辑原则：先确定不能改变的内容，再判断具体表达是否确有问题，最后以尽可能小的改动完成精修。它不会为了显得“像人写的”而随机替换同义词、强行口语化、故意制造粗糙感或编造个人经历。
+它遵循“保留优先”的编辑原则：先确定不能改变的内容，再判断具体表达是否确有问题，最后以尽可能小的改动完成精修。它不会为了显得“像人写的”而随机替换同义词、强行口语化、故意制造粗糙感或编造个人经历。
 
 ## 主要能力
 
@@ -31,7 +31,7 @@
 
 ## 安装
 
-推荐安装到跨运行时可发现的 `.agents/skills` 目录。
+推荐安装到跨运行时可发现的 `.agents/skills` 目录，Codex、Kimi Code 等客户端均可自动识别。
 
 ### PowerShell
 
@@ -45,7 +45,7 @@ git clone https://github.com/fyihang/refining-the-tone-of-ai.git "$env:USERPROFI
 git clone https://github.com/fyihang/refining-the-tone-of-ai.git ~/.agents/skills/refining-the-tone-of-ai
 ```
 
-安装后，新建会话或重启相关客户端，以确保 Skill 被重新发现。
+安装后新建会话或重启客户端，让 Skill 被重新发现。
 
 更新现有安装：
 
@@ -88,7 +88,7 @@ git -C "$env:USERPROFILE\.agents\skills\refining-the-tone-of-ai" pull --ff-only
 
 ## 编辑原则
 
-Skill 在修改文本时遵循以下顺序：
+修改文本时遵循以下顺序：
 
 1. 提取不能改变的事实、数字、名称、术语、引文、因果方向和步骤依赖。
 2. 判断文本属于哪种文体及其正式程度。
