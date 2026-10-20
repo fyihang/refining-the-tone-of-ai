@@ -44,7 +44,7 @@ RULES = (
     Rule(
         "binary_contrast",
         "二分对照壳",
-        3,
+        0,
         re.compile(
             rf"(?:(?<![要是])不是|并非|不在于|不只是|不止是|不仅是|并没有|不在(?!于))"
             rf"{SENTENCE_BODY}{{0,32}}?(?:而是|而在于|更是|而在(?!于))"
@@ -306,14 +306,14 @@ def audit_text(text: str, profile: str = "general") -> dict:
     findings.sort(key=lambda item: (item["line"], -item["severity"], item["rule"], item["match"]))
     score = sum(item["severity"] for item in findings)
     blockers = [item for item in findings if item["severity"] >= 3]
-    repeated_rules = Counter(item["rule"] for item in findings if item["severity"] > 0)
+    repeated_rules = Counter(item["rule"] for item in findings if item["severity"] >= 2)
     clustered = any(count >= 2 for count in repeated_rules.values())
     return {
         "profile": profile,
         "score": score,
         "finding_count": len(findings),
         "blocker_count": len(blockers),
-        "verdict": "review" if blockers or score > 2 or clustered else "clear",
+        "verdict": "review" if score >= 4 or len(blockers) >= 2 or clustered else "clear",
         "findings": findings,
     }
 

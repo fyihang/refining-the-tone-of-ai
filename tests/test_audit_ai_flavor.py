@@ -27,10 +27,25 @@ audit = load_audit_module()
 
 
 class AuditBehaviorTests(unittest.TestCase):
-    def test_general_profile_reviews_unnecessary_binary_shell(self):
+    def test_general_profile_lists_binary_shell_without_scoring(self):
         result = audit.audit_text("这不是效率问题，而是系统问题。", profile="general")
+        contrasts = [item for item in result["findings"] if item["rule"] == "binary_contrast"]
+        self.assertEqual([0], [item["severity"] for item in contrasts])
+        self.assertEqual(0, result["score"])
+        self.assertEqual(1, result["finding_count"])
+        self.assertEqual("clear", result["verdict"])
+
+    def test_general_profile_reviews_when_other_rules_still_cluster(self):
+        text = (
+            "这不是效率问题，而是系统问题。"
+            "总的来说，这套方法论是赋能团队的抓手。"
+            "值得注意的是，它能助力增长。"
+        )
+        result = audit.audit_text(text, profile="general")
+        contrasts = [item for item in result["findings"] if item["rule"] == "binary_contrast"]
+        self.assertEqual([0], [item["severity"] for item in contrasts])
+        self.assertEqual(7, result["score"])
         self.assertEqual("review", result["verdict"])
-        self.assertIn("binary_contrast", {item["rule"] for item in result["findings"]})
 
     def test_fiction_profile_preserves_required_dialogue(self):
         text = "沈弦说：“这不是参数波动，而是有人改了供电优先级。”"
@@ -64,9 +79,12 @@ class AuditBehaviorTests(unittest.TestCase):
         self.assertEqual([0, 0], [item["severity"] for item in sequences])
 
     def test_sop_profile_reviews_ceremonial_sequence_with_jargon(self):
-        text = "先统一思想，再形成共识。总的来说，这将赋能团队。"
+        text = "先统一思想，再形成共识。总的来说，这将赋能团队。值得注意的是，这套闭环会助力长期主义。"
         result = audit.audit_text(text, profile="sop")
         self.assertEqual("review", result["verdict"])
+        self.assertEqual(8, result["score"])
+        sequences = [item for item in result["findings"] if item["rule"] == "staged_sequence"]
+        self.assertEqual([0], [item["severity"] for item in sequences])
 
     def test_fiction_profile_reviews_clustered_narrator_cliches(self):
         text = "他不禁停下脚步，随后缓缓说道：夜已经深了。"
@@ -79,9 +97,15 @@ class AuditBehaviorTests(unittest.TestCase):
         self.assertEqual("review", result["verdict"])
 
     def test_all_before_fixtures_require_review(self):
+        # Novel narration only reaches review under fiction, where the two
+        # stock modifiers are severity 2 and the same rule repeats.
         fixture_dir = SKILL_ROOT / "tests" / "fixtures"
+        profiles = {"novel_opening_before.md": "fiction"}
         verdicts = {
-            path.name: audit.audit_text(path.read_text(encoding="utf-8"), profile="general")["verdict"]
+            path.name: audit.audit_text(
+                path.read_text(encoding="utf-8"),
+                profile=profiles.get(path.name, "general"),
+            )["verdict"]
             for path in fixture_dir.glob("*_before.md")
         }
         self.assertTrue(verdicts)
@@ -110,8 +134,7 @@ class AuditBehaviorTests(unittest.TestCase):
 
 class AuditCliTests(unittest.TestCase):
     def test_cli_expands_windows_style_glob(self):
-        # Glob expansion only. Some after fixtures stay review under the current
-        # binary_contrast severity; fidelity tests check those verdicts.
+        # Glob expansion only. Fidelity tests check after-fixture verdicts.
         pattern = str(SKILL_ROOT / "tests" / "fixtures" / "*_after.md")
         completed = subprocess.run(
             [sys.executable, str(SCRIPT_PATH), pattern],
@@ -169,14 +192,28 @@ class AuditCliTests(unittest.TestCase):
     def test_cli_fail_on_review_exits_1_when_document_needs_review(self):
         completed = subprocess.run(
             [sys.executable, str(SCRIPT_PATH), "--stdin", "--fail-on-review"],
-            input="这不是效率问题，而是系统问题。",
+            input="总的来说，范围已经收束。值得注意的是，步骤没有变。",
             check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
         )
         self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
-        self.assertIn("review", completed.stdout)
+        self.assertIn("review score=", completed.stdout)
+        self.assertNotIn("Traceback", completed.stderr)
+
+    def test_cli_fail_on_review_exits_0_for_zero_severity_contrast(self):
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPT_PATH), "--stdin", "--fail-on-review"],
+            input="这不是效率问题，而是系统问题。",
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        self.assertIn("clear score=0", completed.stdout)
+        self.assertIn("二分对照壳", completed.stdout)
         self.assertNotIn("Traceback", completed.stderr)
 
 
@@ -220,12 +257,12 @@ class AuditBoundaryRegressionTests(unittest.TestCase):
                 result = audit.audit_text(text, profile="general")
                 self.assertNotIn("binary_contrast", rules_of(result))
 
-    def test_real_binary_contrast_still_matches_at_severity_3(self):
+    def test_real_binary_contrast_still_matches_at_severity_0(self):
         text = "你是不是觉得这不是效率问题，而是系统问题。"
         result = audit.audit_text(text, profile="general")
         contrasts = [item for item in result["findings"] if item["rule"] == "binary_contrast"]
         self.assertEqual(1, len(contrasts))
-        self.assertEqual(3, contrasts[0]["severity"])
+        self.assertEqual(0, contrasts[0]["severity"])
         self.assertIn("不是效率问题，而是", contrasts[0]["match"])
 
     def test_adjacent_contrasts_are_counted_separately(self):
@@ -233,7 +270,7 @@ class AuditBoundaryRegressionTests(unittest.TestCase):
         result = audit.audit_text(text, profile="general")
         contrasts = [item for item in result["findings"] if item["rule"] == "binary_contrast"]
         self.assertEqual(2, len(contrasts))
-        self.assertEqual([3, 3], [item["severity"] for item in contrasts])
+        self.assertEqual([0, 0], [item["severity"] for item in contrasts])
 
     def test_missing_contrast_forms_are_detected(self):
         samples = (
@@ -244,7 +281,7 @@ class AuditBoundaryRegressionTests(unittest.TestCase):
             with self.subTest(text=text):
                 result = audit.audit_text(text, profile="general")
                 contrasts = [item for item in result["findings"] if item["rule"] == "binary_contrast"]
-                self.assertEqual([3], [item["severity"] for item in contrasts])
+                self.assertEqual([0], [item["severity"] for item in contrasts])
 
     def test_existing_contrast_forms_still_match_once(self):
         for text in (
@@ -257,7 +294,7 @@ class AuditBoundaryRegressionTests(unittest.TestCase):
                 result = audit.audit_text(text, profile="general")
                 contrasts = [item for item in result["findings"] if item["rule"] == "binary_contrast"]
                 self.assertEqual(1, len(contrasts))
-                self.assertEqual(3, contrasts[0]["severity"])
+                self.assertEqual(0, contrasts[0]["severity"])
 
     def test_partial_quote_does_not_exempt_surrounding_contrast(self):
         text = "他说的不是“效率”，而是“系统”。"
@@ -324,7 +361,7 @@ class AuditQuoteAndTitleRegressionTests(unittest.TestCase):
         result = audit.audit_text(text, profile="general")
         contrasts = [item for item in result["findings"] if item["rule"] == "binary_contrast"]
         self.assertEqual(1, len(contrasts))
-        self.assertEqual(3, contrasts[0]["severity"])
+        self.assertEqual(0, contrasts[0]["severity"])
 
     def test_ascii_single_quotes_around_chinese_still_exempt(self):
         text = "他说：'这不是效率问题，而是系统问题。'"
@@ -466,6 +503,83 @@ class AuditShapeLineAndRecursiveTests(unittest.TestCase):
         )
         self.assertEqual(1, with_payload["schema_version"])
         self.assertNotIn("skip.py", with_flag.stdout)
+
+
+class AuditVerdictThresholdTests(unittest.TestCase):
+    def test_binary_contrast_is_zero_in_every_profile(self):
+        text = "这不是效率问题，而是系统问题。"
+        for profile in audit.PROFILES:
+            with self.subTest(profile=profile):
+                result = audit.audit_text(text, profile=profile)
+                contrasts = [item for item in result["findings"] if item["rule"] == "binary_contrast"]
+                self.assertEqual([0], [item["severity"] for item in contrasts])
+                self.assertEqual(0, result["score"])
+                self.assertEqual(0, result["blocker_count"])
+                self.assertEqual(1, result["finding_count"])
+                self.assertEqual("clear", result["verdict"])
+
+    def test_score_3_is_clear_and_score_4_is_review(self):
+        score_3 = audit.audit_text("这套做法会赋能团队，也能助力复盘，并且留下一个抓手。", profile="general")
+        self.assertEqual([1, 1, 1], sorted(item["severity"] for item in score_3["findings"]))
+        self.assertEqual(3, score_3["score"])
+        self.assertEqual(0, score_3["blocker_count"])
+        self.assertEqual("clear", score_3["verdict"])
+
+        score_4 = audit.audit_text(
+            "这套做法会赋能团队，也能助力复盘，并且留下一个抓手，最后收成闭环。",
+            profile="general",
+        )
+        self.assertEqual([1, 1, 1, 1], sorted(item["severity"] for item in score_4["findings"]))
+        self.assertEqual(4, score_4["score"])
+        self.assertEqual(0, score_4["blocker_count"])
+        self.assertEqual("review", score_4["verdict"])
+
+    def test_one_severity_3_finding_is_clear(self):
+        result = audit.audit_text("下面我们来核对今晚的名单。", profile="general")
+        self.assertEqual([3], [item["severity"] for item in result["findings"]])
+        self.assertEqual(1, result["blocker_count"])
+        self.assertEqual(3, result["score"])
+        self.assertEqual("clear", result["verdict"])
+
+    def test_two_severity_3_findings_review(self):
+        result = audit.audit_text("下面我们来核对名单。你觉得这个方案怎么样？", profile="general")
+        self.assertEqual([3, 3], sorted(item["severity"] for item in result["findings"]))
+        self.assertEqual(2, result["blocker_count"])
+        self.assertEqual("review", result["verdict"])
+
+    def test_same_rule_severity_2_twice_reviews(self):
+        result = audit.audit_text("总的来说，范围已经收束。值得注意的是，步骤没有变。", profile="general")
+        lectures = [item for item in result["findings"] if item["rule"] == "lecture_marker"]
+        self.assertEqual([2, 2], sorted(item["severity"] for item in lectures))
+        self.assertEqual(2, len(result["findings"]))
+        self.assertEqual(4, result["score"])
+        self.assertEqual("review", result["verdict"])
+
+    def test_severity_1_repeat_does_not_force_review(self):
+        result = audit.audit_text("这套做法会赋能团队，也能助力复盘。", profile="general")
+        self.assertEqual([1, 1], sorted(item["severity"] for item in result["findings"]))
+        self.assertEqual(2, result["score"])
+        self.assertEqual("clear", result["verdict"])
+
+    def test_zero_severity_repeat_does_not_force_review(self):
+        text = "不是记录问题，而是交接问题；不是个人疏忽，而是名单过期。"
+        result = audit.audit_text(text, profile="general")
+        contrasts = [item for item in result["findings"] if item["rule"] == "binary_contrast"]
+        self.assertEqual([0, 0], [item["severity"] for item in contrasts])
+        self.assertEqual(2, result["finding_count"])
+        self.assertEqual(0, result["score"])
+        self.assertEqual(0, result["blocker_count"])
+        self.assertEqual("clear", result["verdict"])
+
+    def test_skill_example_after_is_clear_under_academic_profile(self):
+        text = "该缓存策略的核心在于保持版本戳单调递增。故障源于服务重启后把版本戳恢复成了 0。修复时先恢复持久化版本戳，再重新开放流量。"
+        result = audit.audit_text(text, profile="academic")
+        self.assertEqual(3, result["score"])
+        self.assertEqual("clear", result["verdict"])
+        self.assertEqual(
+            [("essence_claim", 1), ("staged_sequence", 2)],
+            sorted((item["rule"], item["severity"]) for item in result["findings"]),
+        )
 
 
 if __name__ == "__main__":

@@ -143,6 +143,10 @@ python .\scripts\audit_ai_flavor.py .\drafts --profile general --fail-on-review
 | `1` | 启用了 `--fail-on-review`，且至少一个文档判定为 `review` |
 | `2` | 输入路径、glob 或标准输入等参数存在错误 |
 
+判定规则：满足任一条件即为 `review`：总分 ≥ 4；3 级命中 ≥ 2 处；同一规则中严重度 ≥ 2 的命中 ≥ 2 处。否则为 `clear`。此前单个 3 级命中、总分大于 2、或任一规则命中 2 次即判 `review`，现已放宽。`--fail-on-review` 是否返回退出码 `1` 跟随这一判定，因此同样放宽。JSON 的字段和 `schema_version`（仍为 `1`）不变。
+
+“二分对照壳”（`binary_contrast`）在所有 profile 下都是 0 级：命中仍出现在文本输出和 JSON 的 `findings` 里，并计入 `finding_count`，但不计入总分，也不参与上面的复核条件。严重度为 0 的重复命中不会因为同一规则出现两次而触发 `review`。是否属于“虚空打靶”需要结合全文和你的要求判断，脚本无法可靠识别。操作规程 profile 里严重度为 0 的“机械先后顺序”使用同一套计分方式。
+
 可用 Profile：
 
 | Profile | 用途 |
@@ -153,7 +157,7 @@ python .\scripts\audit_ai_flavor.py .\drafts --profile general --fail-on-review
 | `fiction` | 小说和叙事文本 |
 | `sop` | 操作规程、教程和步骤说明 |
 
-`clear` 只表示没有已配置的模式需要复核，不代表文本质量合格、内容原创或由人类创作。
+`clear` 表示没有达到上述复核条件，不代表文本质量合格、内容原创或由人类创作。`review` 只表示值得对照编辑规则再看一遍，同样不是质量或作者身份判断。
 
 查看完整命令参数：
 
