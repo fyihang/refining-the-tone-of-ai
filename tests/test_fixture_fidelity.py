@@ -26,6 +26,14 @@ from pathlib import Path
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = SKILL_ROOT / "scripts" / "audit_ai_flavor.py"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
+# Register used in addition to general. Fixtures without a dedicated profile stay on general.
+REGISTER_PROFILES = {
+    "academic_technical": "academic",
+    "editorial_commentary": "editorial",
+    "email_comment": "email",
+    "novel_opening": "fiction",
+    "xhs_ai_flavor": "social",
+}
 
 QUOTE_RE = re.compile(
     r"“(.*?)”|‘(.*?)’|「(.*?)」|『(.*?)』|\"([^\"\n]*)\"|'([^'\n]*)'",
@@ -341,6 +349,23 @@ class FixtureFidelityTests(unittest.TestCase):
                 self.assertEqual("clear", result["verdict"])
                 self.assertEqual([], blockers)
                 self.assertLessEqual(score, 2)
+
+    def test_register_profile_after_is_clear_and_lower_scoring(self):
+        audit = load_audit_module()
+        seen = []
+        for stem, before, after, _keeps, _drops, allow_rules in load_pairs():
+            profile = REGISTER_PROFILES.get(stem)
+            if profile is None:
+                continue
+            seen.append(stem)
+            with self.subTest(stem=stem, profile=profile):
+                before_result = audit.audit_text(before, profile=profile)
+                after_result = audit.audit_text(after, profile=profile)
+                self.assertEqual([], allow_rules)
+                self.assertEqual("review", before_result["verdict"])
+                self.assertEqual("clear", after_result["verdict"])
+                self.assertLess(after_result["score"], before_result["score"])
+        self.assertIn("editorial_commentary", seen)
 
     def test_new_person_names_warn_only(self):
         # Coarse screen: warn, do not fail the pair.

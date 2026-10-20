@@ -121,6 +121,8 @@ python .\scripts\audit_ai_flavor.py ".\drafts\*.md" --profile social
 
 目录扫描默认只读取该目录中的文本文件，不会进入子目录。需要连同子目录一起扫描时，加上 `--recursive`。
 
+固定提法可以写进文本文件，一行一条，扫描时加上 `--keep-terms FILE`。空行和以 `#` 开头的行会跳过。列出的字串按原文逐字豁免：整段落在该字串里的命中不再报出；四字顿号链会先遮住这些字串，所以链中间的固定提法会把链打断。这不给 JSON 增加字段，`schema_version` 仍为 `1`。
+
 ### 从标准输入读取并输出 JSON
 
 ```powershell
@@ -156,6 +158,10 @@ python .\scripts\audit_ai_flavor.py .\drafts --profile general --fail-on-review
 | `academic` | 学术及技术文本 |
 | `fiction` | 小说和叙事文本 |
 | `sop` | 操作规程、教程和步骤说明 |
+| `email` | 邮件与事务性沟通 |
+| `editorial` | 社论、评论、理论文章与公文 |
+
+`general` 下每一处用 `……` 收束的列举各记 1 分，评论里若有多处，总分可以达到 `review`。评论和公文请用 `--profile editorial`。
 
 `clear` 表示没有达到上述复核条件，不代表文本质量合格、内容原创或由人类创作。`review` 只表示值得对照编辑规则再看一遍，同样不是质量或作者身份判断。
 
