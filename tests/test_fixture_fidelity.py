@@ -4,8 +4,9 @@ Each pair is `tests/fixtures/<stem>_before.md`, `<stem>_after.md`, and
 `<stem>_keep.txt`. Keep lines are non-negotiable source spans: each one must
 be a substring of both the before and the after. A line `# drop: <quoted
 inner text>` declares a quotation the revision may remove. A line
-`# allow-rule: <rule_id>` names an audit rule the current script may still
-flag on that after; other `#` lines are comments.
+`# allow-rule: <rule_id>` names an audit rule the score check may ignore.
+Current fixtures leave this list empty: `binary_contrast` is severity 0 and
+does not change the verdict. Other `#` lines are comments.
 
 The person-name screen is warning-level. It is a coarse surname regex, not
 named-entity recognition, so ordinary words that merely start with a surname
@@ -336,6 +337,8 @@ class FixtureFidelityTests(unittest.TestCase):
                 counted = counted_findings(result, allow_rules)
                 blockers = [item["rule"] for item in counted if item["severity"] >= 3]
                 score = sum(item["severity"] for item in counted)
+                self.assertEqual([], allow_rules)
+                self.assertEqual("clear", result["verdict"])
                 self.assertEqual([], blockers)
                 self.assertLessEqual(score, 2)
 
