@@ -392,23 +392,16 @@ def _is_han(char: str) -> bool:
     return "\u4e00" <= char <= "\u9fff"
 
 
-def _chain_edge_fragment(text: str, index: int, forward: bool) -> bool:
-    """True when a 4-character item is the head or tail of a 5- or 6-character word."""
+def _trailing_word_extra(text: str, index: int) -> int:
+    """1 or 2 when a 4-character item is the head of a 5- or 6-character word."""
     limit = len(text)
     for extra in (1, 2):
-        if forward:
-            stop = index + extra
-            if stop > limit or not all(_is_han(text[i]) for i in range(index, stop)):
-                continue
-            if stop == limit or text[stop] in _CHAIN_EDGE:
-                return True
-        else:
-            start = index - extra
-            if start < 0 or not all(_is_han(text[i]) for i in range(start, index)):
-                continue
-            if start == 0 or text[start - 1] in _CHAIN_EDGE:
-                return True
-    return False
+        stop = index + extra
+        if stop > limit or not all(_is_han(text[i]) for i in range(index, stop)):
+            continue
+        if stop == limit or text[stop] in _CHAIN_EDGE:
+            return extra
+    return 0
 
 
 def find_four_char_chains(text: str, profile: str, masked: list[tuple[int, int]]) -> list[dict]:
@@ -416,7 +409,9 @@ def find_four_char_chains(text: str, profile: str, masked: list[tuple[int, int]]
 
     Keep-term, quote, title, and code spans are masked first, so a listed
     formulation breaks a chain instead of hiding the words around it.
-    A 4-character slice of a 5- or 6-character word at either end is not an item.
+    A one-character lead-in is kept. If the last item is only the first four
+    characters of a 5- or 6-character word, that item is dropped and the chain
+    is kept when at least four items remain.
     """
     visible = mask_spans(text, masked)
     severity = severity_for(_FOUR_CHAR_RULE.rule_id, _FOUR_CHAR_RULE.severity, profile)
@@ -426,20 +421,22 @@ def find_four_char_chains(text: str, profile: str, masked: list[tuple[int, int]]
         match = _FOUR_CHAR_CHAIN.search(visible, cursor)
         if match is None:
             break
-        fragmented = _chain_edge_fragment(visible, match.start(), False) or _chain_edge_fragment(
-            visible, match.end(), True
-        )
-        if fragmented:
-            cursor = match.start() + 1
-            continue
+        end = match.end()
+        items = match.group(0).split("、")
+        if _trailing_word_extra(visible, end):
+            items = items[:-1]
+            if len(items) < 4:
+                cursor = match.start() + 1
+                continue
+            end = match.start() + len("、".join(items))
         findings.append(
             finding(
                 _FOUR_CHAR_RULE,
                 severity,
                 text,
                 match.start(),
-                match.end(),
-                text[match.start() : match.end()],
+                end,
+                text[match.start() : end],
             )
         )
         cursor = match.end()

@@ -818,10 +818,24 @@ class AuditEmailEditorialProfileTests(unittest.TestCase):
             profile="general",
         )
         self.assertEqual([1], severities_for(five, "four_char_chain"))
+        lead_in = audit.audit_text("要统筹规划、科学布局、精准施策、久久为功。", profile="general")
+        lead_hits = [item for item in lead_in["findings"] if item["rule"] == "four_char_chain"]
+        self.assertEqual(
+            ["统筹规划、科学布局、精准施策、久久为功"],
+            [item["match"] for item in lead_hits],
+        )
+        trimmed = audit.audit_text(
+            "资料收集、分类整理、限时审核、结果公示、跟踪回访机制。",
+            profile="general",
+        )
+        trimmed_hits = [item for item in trimmed["findings"] if item["rule"] == "four_char_chain"]
+        self.assertEqual(
+            ["资料收集、分类整理、限时审核、结果公示"],
+            [item["match"] for item in trimmed_hits],
+        )
         for fragment in (
-            "到社区去、到农村去、到工厂去、到街头巷尾去",
-            "到社区去、到农村去、到工厂去、到街头巷尾去。",
-            "走到街头巷尾、甲乙丙丁、戊己庚辛、壬癸子丑。",
+            "到车间去、到仓库去、到码头去、到田间地头去",
+            "到车间去、到仓库去、到码头去、到田间地头去。",
         ):
             with self.subTest(fragment=fragment):
                 result = audit.audit_text(fragment, profile="general")
