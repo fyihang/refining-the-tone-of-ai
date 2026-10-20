@@ -1,22 +1,29 @@
 """Fidelity checks for before/after fixture pairs.
 
 Each pair is `tests/fixtures/<stem>_before.md`, `<stem>_after.md`, and
-`<stem>_keep.txt`. Keep files list substrings that must survive verbatim.
-A line `# drop: <quoted inner text>` declares a quotation the revision may
-remove. Other `#` lines are comments.
+`<stem>_keep.txt`. Keep lines are non-negotiable source spans: each one must
+be a substring of both the before and the after. A line `# drop: <quoted
+inner text>` declares a quotation the revision may remove. A line
+`# allow-rule: <rule_id>` names an audit rule the current script may still
+flag on that after; other `#` lines are comments.
 
-The person-name screen is warning-level: a coarse surname regex, not a
-failure, because it cannot reliably separate names from ordinary words.
+The person-name screen is warning-level. It is a coarse surname regex, not
+named-entity recognition, so ordinary words that merely start with a surname
+(高价值, 段落都, 连续出) are excluded rather than treated as people.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import re
+import sys
 import unittest
 import warnings
 from pathlib import Path
 
 
+SKILL_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_PATH = SKILL_ROOT / "scripts" / "audit_ai_flavor.py"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 QUOTE_RE = re.compile(
@@ -24,13 +31,18 @@ QUOTE_RE = re.compile(
     re.DOTALL,
 )
 DIGIT_RE = re.compile(r"\d+(?:\.\d+)?")
+# Chinese numeral plus a measure word, so revisions cannot add counts such as
+# 三件事 or 三类材料.
+MEASURE_RE = re.compile(r"[一二两三四五六七八九十百千万]+(?:个|件|类|条|步|种|次|天|位|人|项)")
+_CLOCK = r"\d{1,2}[:：]\d{2}(?:[:：]\d{2})?"
+_NUMERAL = r"[零〇一二三四五六七八九十两\d]{1,3}"
+_TIME_OF_DAY = r"凌晨|清晨|早上|上午|中午|下午|傍晚|晚上|深夜|夜里"
+# Bare "X点" matches only with 分/钟 after it, or with a time-of-day word
+# before it. 少一点 and 两点意见 are not times.
 TIME_RE = re.compile(
-    r"\d{1,2}[:：]\d{2}(?:[:：]\d{2})?"
-    r"|(?:凌晨|清晨|早上|上午|中午|下午|傍晚|晚上|深夜|夜里)"
-    r"(?:[零〇一二三四五六七八九十两\d]{1,3}点"
-    r"(?:[零〇一二三四五六七八九十两半\d]{1,3}分)?)?"
-    r"|[零〇一二三四五六七八九十两\d]{1,3}点"
-    r"(?:[零〇一二三四五六七八九十两半\d]{1,3}分)?"
+    rf"{_CLOCK}"
+    rf"|(?:{_TIME_OF_DAY})(?:{_NUMERAL}点(?:{_NUMERAL}分|钟)?)?"
+    rf"|{_NUMERAL}点(?:{_NUMERAL}分|钟)"
 )
 
 # Common single-character surnames, plus frequent compound surnames.
@@ -131,11 +143,24 @@ GIVEN_NAME_STOP = frozenset(
     "你我他她它其个中上下里为以所会能可要着过呢吗吧啊呀嘛们后前"
     "零〇一二三四五六七八九十两"
 )
+# Ordinary phrases the surname screen would otherwise call names.
+NOT_PERSON_NAMES = frozenset({"高价值", "段落都", "连续出", "支持"})
 
 
-def parse_keep_text(text: str) -> tuple[list[str], list[str]]:
+def load_audit_module():
+    spec = importlib.util.spec_from_file_location("tone_audit_fidelity", SCRIPT_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Unable to load audit module")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def parse_keep_text(text: str) -> tuple[list[str], list[str], list[str]]:
     keeps: list[str] = []
     drops: list[str] = []
+    allow_rules: list[str] = []
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
@@ -145,10 +170,15 @@ def parse_keep_text(text: str) -> tuple[list[str], list[str]]:
             if value:
                 drops.append(value)
             continue
+        if line.startswith("# allow-rule:"):
+            rule = line[len("# allow-rule:") :].strip()
+            if rule:
+                allow_rules.append(rule)
+            continue
         if line.startswith("#"):
             continue
         keeps.append(line)
-    return keeps, drops
+    return keeps, drops, allow_rules
 
 
 def _strip_wrapping_quotes(value: str) -> str:
@@ -204,8 +234,12 @@ def person_name_candidates(text: str) -> set[str]:
         ):
             given += text[cursor]
             cursor += 1
-        if given and 2 <= surname_len + len(given) <= 4:
-            found.add(surname + given)
+        if not given or not (2 <= surname_len + len(given) <= 4):
+            continue
+        candidate = surname + given
+        if candidate in NOT_PERSON_NAMES:
+            continue
+        found.add(candidate)
     return found
 
 
@@ -223,8 +257,8 @@ def warn_on_new_names(stem: str, before: str, after: str) -> None:
         )
 
 
-def load_pairs() -> list[tuple[str, str, str, list[str], list[str]]]:
-    pairs: list[tuple[str, str, str, list[str], list[str]]] = []
+def load_pairs() -> list[tuple[str, str, str, list[str], list[str], list[str]]]:
+    pairs: list[tuple[str, str, str, list[str], list[str], list[str]]] = []
     before_paths = sorted(FIXTURES.glob("*_before.md"))
     if not before_paths:
         raise AssertionError(f"no before fixtures in {FIXTURES}")
@@ -236,7 +270,7 @@ def load_pairs() -> list[tuple[str, str, str, list[str], list[str]]]:
             raise AssertionError(f"missing after fixture for {stem}")
         if not keep_path.is_file():
             raise AssertionError(f"missing keep file for {stem}")
-        keeps, drops = parse_keep_text(keep_path.read_text(encoding="utf-8"))
+        keeps, drops, allow_rules = parse_keep_text(keep_path.read_text(encoding="utf-8"))
         pairs.append(
             (
                 stem,
@@ -244,29 +278,39 @@ def load_pairs() -> list[tuple[str, str, str, list[str], list[str]]]:
                 after_path.read_text(encoding="utf-8"),
                 keeps,
                 drops,
+                allow_rules,
             )
         )
     return pairs
 
 
+def counted_findings(result: dict, allow_rules: list[str]) -> list[dict]:
+    allowed = set(allow_rules)
+    return [item for item in result["findings"] if item["rule"] not in allowed]
+
+
 class FixtureFidelityTests(unittest.TestCase):
-    def test_keep_lines_appear_verbatim(self):
-        for stem, _before, after, keeps, _drops in load_pairs():
+    def test_keep_lines_are_in_before_and_after(self):
+        for stem, before, after, keeps, _drops, _allow in load_pairs():
             with self.subTest(stem=stem):
                 self.assertTrue(keeps, f"{stem}_keep.txt has no required lines")
-                missing = [line for line in keeps if line not in after]
-                self.assertEqual([], missing)
+                missing_before = [line for line in keeps if line not in before]
+                missing_after = [line for line in keeps if line not in after]
+                self.assertEqual([], missing_before)
+                self.assertEqual([], missing_after)
 
     def test_after_adds_no_digit_or_time_strings(self):
-        for stem, before, after, _keeps, _drops in load_pairs():
+        for stem, before, after, _keeps, _drops, _allow in load_pairs():
             with self.subTest(stem=stem):
                 new_digits = strings_absent_from(DIGIT_RE.findall(after), before)
+                new_measures = strings_absent_from(MEASURE_RE.findall(after), before)
                 new_times = strings_absent_from(TIME_RE.findall(after), before)
                 self.assertEqual([], new_digits)
+                self.assertEqual([], new_measures)
                 self.assertEqual([], new_times)
 
     def test_quoted_spans_survive_unless_dropped(self):
-        for stem, before, after, _keeps, drops in load_pairs():
+        for stem, before, after, _keeps, drops, _allow in load_pairs():
             with self.subTest(stem=stem):
                 missing = [
                     inner
@@ -275,10 +319,29 @@ class FixtureFidelityTests(unittest.TestCase):
                 ]
                 self.assertEqual([], missing)
 
+    def test_after_differs_from_before(self):
+        audit = load_audit_module()
+        for stem, before, after, _keeps, _drops, _allow in load_pairs():
+            with self.subTest(stem=stem):
+                self.assertNotEqual(before, after)
+                before_score = audit.audit_text(before, profile="general")["score"]
+                after_score = audit.audit_text(after, profile="general")["score"]
+                self.assertLess(after_score, before_score)
+
+    def test_after_score_ignores_only_allow_listed_rules(self):
+        audit = load_audit_module()
+        for stem, _before, after, _keeps, _drops, allow_rules in load_pairs():
+            with self.subTest(stem=stem):
+                result = audit.audit_text(after, profile="general")
+                counted = counted_findings(result, allow_rules)
+                blockers = [item["rule"] for item in counted if item["severity"] >= 3]
+                score = sum(item["severity"] for item in counted)
+                self.assertEqual([], blockers)
+                self.assertLessEqual(score, 2)
+
     def test_new_person_names_warn_only(self):
-        # Coarse screen: warn, do not fail the pair, so an ordinary word that
-        # happens to start with a surname does not turn red.
-        for stem, before, after, _keeps, _drops in load_pairs():
+        # Coarse screen: warn, do not fail the pair.
+        for stem, before, after, _keeps, _drops, _allow in load_pairs():
             with self.subTest(stem=stem):
                 warn_on_new_names(stem, before, after)
 
@@ -291,19 +354,27 @@ class FixtureFidelityTests(unittest.TestCase):
             warn_on_new_names("novel_opening", before, after)
         self.assertTrue(any("周景明" in str(item.message) for item in caught))
 
+    def test_name_screen_skips_ordinary_surname_words(self):
+        before = "原文。"
+        after = "高价值区域。段落都差不多。连续出现。"
+        self.assertEqual(set(), new_person_names(before, after))
+
     def test_drop_declaration_exempts_quoted_span(self):
         before = "老板说：“这句要删”。旁边还有“留下”。"
         after = "留下"
-        keeps, drops = parse_keep_text("# comment\n留下\n# drop: 这句要删\n")
+        keeps, drops, allow_rules = parse_keep_text(
+            "# comment\n留下\n# drop: 这句要删\n# allow-rule: binary_contrast\n"
+        )
         self.assertEqual(["留下"], keeps)
         self.assertEqual(["这句要删"], drops)
+        self.assertEqual(["binary_contrast"], allow_rules)
         missing = [inner for inner in quoted_inners(before) if inner not in drops and inner not in after]
         self.assertEqual([], missing)
         still_required = [inner for inner in quoted_inners(before) if inner not in after]
         self.assertEqual(["这句要删"], still_required)
 
     def test_drop_line_accepts_wrapping_quotes(self):
-        _keeps, drops = parse_keep_text("# drop: “这句要删”\n")
+        _keeps, drops, _allow = parse_keep_text("# drop: “这句要删”\n")
         self.assertEqual(["这句要删"], drops)
 
     def test_new_digit_and_time_strings_are_detected(self):
@@ -313,6 +384,18 @@ class FixtureFidelityTests(unittest.TestCase):
         new_times = strings_absent_from(TIME_RE.findall(after), before)
         self.assertTrue(any("晚上七点" in item for item in new_times), new_times)
         self.assertNotIn("凌晨三点三十六分", new_times)
+
+    def test_new_measure_phrases_are_detected(self):
+        before = "先整理资料，再输出方案。"
+        after = "先做三件事，再准备三类材料。"
+        new_measures = strings_absent_from(MEASURE_RE.findall(after), before)
+        self.assertIn("三件", new_measures)
+        self.assertIn("三类", new_measures)
+
+    def test_loose_point_phrases_are_not_times(self):
+        for text in ("少一点", "两点意见", "但这一点还需要研究支撑。"):
+            with self.subTest(text=text):
+                self.assertEqual([], TIME_RE.findall(text))
 
 
 if __name__ == "__main__":
