@@ -116,6 +116,8 @@ python .\scripts\audit_ai_flavor.py .\drafts --profile academic
 python .\scripts\audit_ai_flavor.py ".\drafts\*.md" --profile social
 ```
 
+目录扫描默认只读取该目录中的文本文件，不会进入子目录。需要连同子目录一起扫描时，加上 `--recursive`。
+
 ### 从标准输入读取并输出 JSON
 
 ```powershell
