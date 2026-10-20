@@ -37,7 +37,7 @@ Follow this order:
 | Three-part lists and triads | Items are near-synonyms or name no object; compress them, and do not invent objects | Each item names a distinct object, actor, metric, or step |
 | Slogan endings: `必将` / `定能` / `定会` with grand imagery, slogan couplets, `让我们…` | The ending only restates the thesis with grand imagery | The ending carries a fixed formulation, the publication requires it, or the user asks to keep it |
 | Evaluative labels (`生动写照`, `生动实践`, `生动注脚`) and stacked metaphors (`加速器`, `催化剂`, `试金石`) | They replace information with a verdict, or several metaphors decorate one sentence | The label is part of a fixed formulation, or one metaphor carries the reasoning through the paragraph |
-| Example lists closed with `……` | Examples trail off in essays, emails, technical or academic prose | Editorial or official register, or a quotation |
+| Example lists closed with `……` | Examples trail off in essays, emails, technical or academic prose; close the list with 等 or end it at the last listed item, and never add items | Editorial or official register, or a quotation |
 | Authority quotations | Never add one to make a claim sound weightier | Keep every quotation in the source, with its attribution |
 
 Common route markers include `下面我们来`, `接下来我会`, `我们可以看到`, `希望这能帮到你`, `作为AI`, and `截至我的知识`. Lecture markers such as `总的来说`, `值得注意的是`, `拆一拆`, and `聊一聊` are weaker signals: revise them when they narrate instead of adding content.
@@ -77,10 +77,10 @@ Signed commentary often reads as argued rather than assembled because it answers
 | Answer an existing claim | The negated claim appears in the source, its title, the user's request, or an explicit reader question | Keep the contrast; if no such claim exists, follow Contrast Check |
 | Guard both sides | The source states two failure modes or a precondition | Keep both; do not collapse them into one-sided praise |
 | Count instead of praising | The source gives figures or a comparison | Let those figures carry the claim and drop adjectives they already support |
-| Mark the boundary | The source states a limit, exception, or shortfall | Keep it visible with `当然` or `也要看到`; do not soften it |
+| Mark the boundary | The source states a limit, exception, or shortfall | Keep it visible, with the source's own 当然 or 也要看到 when present; do not soften it, and do not add a boundary the source does not state |
 | Admit the cost | The source states a cost or trade-off | Keep it; never add one |
 | Voice the reader's question | The source contains the objection | Phrase the objection as a question and answer it with source content |
-| Call back at the end | The opening holds a concrete object or phrase | End on it instead of a slogan when the ending only restates the thesis |
+| Call back at the end | The opening holds a concrete object or phrase | If the source's ending already returns to that object or phrase, delete the slogan clause so the callback closes the piece; do not write a new closing sentence or move material across paragraphs |
 
 ## Example
 
@@ -105,7 +105,7 @@ The revision drops a contrast whose negated side has no source, keeps the stated
 - Fixed formulations, document titles, and quotations are character-identical to the source.
 - Every qualifier, limit, exception, shortfall, or stated cost in the source survives.
 - No remaining contrast negates a claim that has no source in the text, its title, the user's request, or an explicit reader question; wherever an invented target was removed, the claim it framed is unchanged.
-- Every question in the revision is answered within the next two sentences, or is one the reader must answer (requested CTA, survey, interview, or request to confirm).
+- Every rhetorical question kept in narration is answered within the next two sentences with source content, or is quoted, dialogue, or genuinely addressed to the reader (requested CTA, survey, interview, or request to confirm). Never invent an answer to satisfy this check.
 - No case, quotation, authority, number, objection, or cost was added to make a technique work, and no material was moved across paragraphs without the user's request.
 
 ## Boundaries
