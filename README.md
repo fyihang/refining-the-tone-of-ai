@@ -161,6 +161,8 @@ python .\scripts\audit_ai_flavor.py .\drafts --profile general --fail-on-review
 | `email` | 邮件与事务性沟通 |
 | `editorial` | 社论、评论、理论文章与公文 |
 
+`general` 下每一处用 `……` 收束的列举各记 1 分，评论里若有多处，总分可以达到 `review`。评论和公文请用 `--profile editorial`。
+
 `clear` 表示没有达到上述复核条件，不代表文本质量合格、内容原创或由人类创作。`review` 只表示值得对照编辑规则再看一遍，同样不是质量或作者身份判断。
 
 查看完整命令参数：

@@ -674,7 +674,7 @@ class AuditEmailEditorialProfileTests(unittest.TestCase):
                     result = audit.audit_text(PATTERN_SAMPLES[rule_id], profile=profile)
                     self.assertEqual([expected], severities_for(result, rule_id))
                     self.assertEqual(expected, result["score"])
-                    self.assertIn(result["verdict"], {"clear", "review"})
+                    self.assertEqual("clear", result["verdict"])
 
     def test_hollow_question_prefixes_and_exemptions(self):
         prefixes = ("这是一个值得", "这值得我们", "值得我们深思", "这个问题值得")
@@ -730,6 +730,33 @@ class AuditEmailEditorialProfileTests(unittest.TestCase):
         self.assertEqual(1, len(hits))
         self.assertEqual(1, hits[0]["severity"])
         self.assertEqual(1, both["score"])
+        self.assertEqual("clear", both["verdict"])
+
+    def test_slogan_ending_treats_single_newline_sentence_lines_as_paragraphs(self):
+        not_at_end = audit.audit_text(
+            "城市更新必将更加美好。\n接下来核对名单，周五前回复。",
+            profile="general",
+        )
+        self.assertEqual([], severities_for(not_at_end, "slogan_ending"))
+        self.assertEqual("clear", not_at_end["verdict"])
+
+        call = audit.audit_text(
+            "前面还有一句。\n让我们把名单再对一遍。",
+            profile="editorial",
+        )
+        hits = [item for item in call["findings"] if item["rule"] == "slogan_ending"]
+        self.assertEqual([(1, 2)], [(item["severity"], item["line"]) for item in hits])
+        self.assertEqual("让我们", hits[0]["match"])
+        self.assertEqual("clear", call["verdict"])
+
+    def test_slogan_gap_stays_inside_one_sentence_and_at_most_20_characters(self):
+        within = audit.audit_text("必将" + ("再" * 20) + "更加光明。", profile="general")
+        self.assertEqual([2], severities_for(within, "slogan_ending"))
+        self.assertEqual("clear", within["verdict"])
+        beyond = audit.audit_text("必将" + ("再" * 21) + "更加光明。", profile="general")
+        self.assertEqual([], severities_for(beyond, "slogan_ending"))
+        crossed = audit.audit_text("必将。更加美好。", profile="general")
+        self.assertEqual([], severities_for(crossed, "slogan_ending"))
 
     def test_vivid_label_matches_the_listed_words_only(self):
         for word in ("写照", "诠释", "缩影", "注脚", "实践", "样本", "篇章"):
@@ -791,6 +818,14 @@ class AuditEmailEditorialProfileTests(unittest.TestCase):
             profile="general",
         )
         self.assertEqual([1], severities_for(five, "four_char_chain"))
+        for fragment in (
+            "到社区去、到农村去、到工厂去、到街头巷尾去",
+            "到社区去、到农村去、到工厂去、到街头巷尾去。",
+            "走到街头巷尾、甲乙丙丁、戊己庚辛、壬癸子丑。",
+        ):
+            with self.subTest(fragment=fragment):
+                result = audit.audit_text(fragment, profile="general")
+                self.assertEqual([], severities_for(result, "four_char_chain"))
         quoted = audit.audit_text(
             "他说：“甲乙丙丁、戊己庚辛、壬癸子丑、寅卯辰巳”。",
             profile="general",
@@ -877,8 +912,10 @@ class AuditEmailEditorialProfileTests(unittest.TestCase):
         plain_result = next(iter(plain_payload["results"].values()))
         self.assertEqual(JSON_RESULT_KEYS, set(kept_result))
         self.assertEqual(JSON_RESULT_KEYS, set(plain_result))
-        self.assertIn(kept_result["verdict"], {"clear", "review"})
-        self.assertIn(plain_result["verdict"], {"clear", "review"})
+        self.assertEqual("clear", kept_result["verdict"])
+        self.assertEqual(1, kept_result["score"])
+        self.assertEqual("clear", plain_result["verdict"])
+        self.assertEqual(2, plain_result["score"])
         self.assertNotIn("four_char_chain", rules_of(kept_result))
         self.assertIn("four_char_chain", rules_of(plain_result))
         self.assertIn("vivid_label", rules_of(kept_result))
@@ -984,6 +1021,14 @@ class AuditEmailEditorialProfileTests(unittest.TestCase):
         self.assertEqual("clear", after["verdict"])
         self.assertEqual([0], severities_for(after, "ellipsis_list"))
         self.assertEqual(1, after["finding_count"])
+        general_after = audit.audit_text(
+            (fixture_dir / "editorial_commentary_after.md").read_text(encoding="utf-8"),
+            profile="general",
+        )
+        self.assertEqual([1], severities_for(general_after, "ellipsis_list"))
+        self.assertEqual(1, general_after["score"])
+        self.assertEqual("clear", general_after["verdict"])
+        self.assertEqual(1, general_after["finding_count"])
 
 
 if __name__ == "__main__":

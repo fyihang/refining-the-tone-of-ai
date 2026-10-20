@@ -49,8 +49,10 @@ PROFILE_SEVERITY_OVERRIDES = {
 }
 _HOLLOW_PREFIXES = ("这是一个值得", "这值得我们", "值得我们深思", "这个问题值得")
 _SLOGAN_ENDING = re.compile(
-    r"(?:必将|定能|定会|定将)[^\n。！？!?]{0,40}?(?:更加|美好|辉煌|澎湃|磅礴|光明)"
+    r"(?:必将|定能|定会|定将)[^\n。！？!?]{0,20}?(?:更加|美好|辉煌|澎湃|磅礴|光明)"
 )
+_SENTENCE_FINAL = frozenset("。！？!?")
+_CHAIN_EDGE = frozenset("、，。；")
 _FOUR_CHAR_CHAIN = re.compile(r"(?:[\u4e00-\u9fff]{4}、){3,}[\u4e00-\u9fff]{4}")
 _METAPHOR_WORDS = ("加速器", "催化剂", "试金石", "压舱石", "稳定器", "蓄水池", "助推器", "新引擎")
 
@@ -386,16 +388,50 @@ def find_metaphor_stacks(
     return findings
 
 
+def _is_han(char: str) -> bool:
+    return "\u4e00" <= char <= "\u9fff"
+
+
+def _chain_edge_fragment(text: str, index: int, forward: bool) -> bool:
+    """True when a 4-character item is the head or tail of a 5- or 6-character word."""
+    limit = len(text)
+    for extra in (1, 2):
+        if forward:
+            stop = index + extra
+            if stop > limit or not all(_is_han(text[i]) for i in range(index, stop)):
+                continue
+            if stop == limit or text[stop] in _CHAIN_EDGE:
+                return True
+        else:
+            start = index - extra
+            if start < 0 or not all(_is_han(text[i]) for i in range(start, index)):
+                continue
+            if start == 0 or text[start - 1] in _CHAIN_EDGE:
+                return True
+    return False
+
+
 def find_four_char_chains(text: str, profile: str, masked: list[tuple[int, int]]) -> list[dict]:
     """Four or more four-character words joined by enumeration commas.
 
     Keep-term, quote, title, and code spans are masked first, so a listed
     formulation breaks a chain instead of hiding the words around it.
+    A 4-character slice of a 5- or 6-character word at either end is not an item.
     """
     visible = mask_spans(text, masked)
     severity = severity_for(_FOUR_CHAR_RULE.rule_id, _FOUR_CHAR_RULE.severity, profile)
     findings: list[dict] = []
-    for match in _FOUR_CHAR_CHAIN.finditer(visible):
+    cursor = 0
+    while True:
+        match = _FOUR_CHAR_CHAIN.search(visible, cursor)
+        if match is None:
+            break
+        fragmented = _chain_edge_fragment(visible, match.start(), False) or _chain_edge_fragment(
+            visible, match.end(), True
+        )
+        if fragmented:
+            cursor = match.start() + 1
+            continue
         findings.append(
             finding(
                 _FOUR_CHAR_RULE,
@@ -406,6 +442,7 @@ def find_four_char_chains(text: str, profile: str, masked: list[tuple[int, int]]
                 text[match.start() : match.end()],
             )
         )
+        cursor = match.end()
     return findings
 
 
@@ -625,21 +662,59 @@ def find_hollow_questions(text: str, visible_text: str, profile: str) -> list[di
     return findings
 
 
+def _blank_separated_blocks(text: str) -> list[tuple[int, str]]:
+    blocks: list[tuple[int, str]] = []
+    start = 0
+    for match in re.finditer(r"\n[ \t]*\n", text):
+        blocks.append((start, text[start : match.start()]))
+        start = match.end()
+    blocks.append((start, text[start:]))
+    return blocks
+
+
+def _line_entries(block_start: int, block: str) -> list[tuple[int, str]]:
+    entries: list[tuple[int, str]] = []
+    offset = block_start
+    lines = block.split("\n")
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped:
+            entries.append((offset + (len(line) - len(line.lstrip())), stripped))
+        offset += len(line)
+        if index != len(lines) - 1:
+            offset += 1
+    return entries
+
+
+def _paragraph_to_check(visible_text: str) -> tuple[int, str] | None:
+    """Last paragraph, including single-newline paragraphs that each end a sentence.
+
+    Blank lines always separate blocks. Inside the last block, lines that each
+    end with sentence-final punctuation are paragraphs of their own; only the
+    last non-empty, non-heading line is checked.
+    """
+    for block_start, block in reversed(_blank_separated_blocks(visible_text)):
+        entries = _line_entries(block_start, block)
+        if not entries:
+            continue
+        if len(entries) >= 2 and all(line[-1] in _SENTENCE_FINAL for _, line in entries):
+            content = [(pos, line) for pos, line in entries if not line.startswith("#")]
+            if content:
+                return content[-1]
+            continue
+        stripped = block.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        return block_start + (len(block) - len(block.lstrip())), block.lstrip()
+    return None
+
+
 def find_slogan_ending(text: str, visible_text: str, profile: str) -> list[dict]:
     """One finding when the last paragraph is a slogan, however many clauses match."""
-    content: list[tuple[int, str]] = []
-    offset = 0
-    parts = visible_text.split("\n\n")
-    for index, paragraph in enumerate(parts):
-        stripped = paragraph.lstrip()
-        if stripped and not stripped.startswith("#"):
-            content.append((offset + (len(paragraph) - len(stripped)), stripped))
-        offset += len(paragraph)
-        if index != len(parts) - 1:
-            offset += 2
-    if not content:
+    checked = _paragraph_to_check(visible_text)
+    if checked is None:
         return []
-    content_start, paragraph = content[-1]
+    content_start, paragraph = checked
     slogan = _SLOGAN_ENDING.search(paragraph)
     if slogan is None and not paragraph.startswith("让我们"):
         return []
