@@ -582,5 +582,409 @@ class AuditVerdictThresholdTests(unittest.TestCase):
         )
 
 
+# Severities from P2-11. general / social / academic / sop share one column.
+PATTERN_SEVERITY = {
+    "hollow_question": {
+        "general": 3,
+        "social": 3,
+        "academic": 3,
+        "sop": 3,
+        "fiction": 2,
+        "email": 3,
+        "editorial": 3,
+    },
+    "slogan_ending": {
+        "general": 2,
+        "social": 2,
+        "academic": 2,
+        "sop": 2,
+        "fiction": 1,
+        "email": 2,
+        "editorial": 1,
+    },
+    "vivid_label": {
+        "general": 1,
+        "social": 1,
+        "academic": 1,
+        "sop": 1,
+        "fiction": 0,
+        "email": 1,
+        "editorial": 1,
+    },
+    "metaphor_stack": {
+        "general": 2,
+        "social": 2,
+        "academic": 2,
+        "sop": 2,
+        "fiction": 0,
+        "email": 2,
+        "editorial": 1,
+    },
+    "ellipsis_list": {
+        "general": 1,
+        "social": 1,
+        "academic": 1,
+        "sop": 1,
+        "fiction": 0,
+        "email": 1,
+        "editorial": 0,
+    },
+    "four_char_chain": {
+        "general": 1,
+        "social": 1,
+        "academic": 1,
+        "sop": 1,
+        "fiction": 0,
+        "email": 1,
+        "editorial": 0,
+    },
+}
+
+PATTERN_SAMPLES = {
+    "hollow_question": "加装电梯为什么难？这是一个值得深思的问题。",
+    "slogan_ending": "城市更新必将更加美好。",
+    "vivid_label": "这是民生工程的生动写照。",
+    "metaphor_stack": "他把工期说成“加速器”，把预算说成“催化剂”。",
+    "ellipsis_list": "已完成加装 1260 部，惠及居民 3.8 万户……",
+    "four_char_chain": "甲乙丙丁、戊己庚辛、壬癸子丑、寅卯辰巳。",
+}
+
+JSON_TOP_KEYS = {"schema_version", "profile", "verdict_semantics", "results"}
+JSON_RESULT_KEYS = {"profile", "score", "finding_count", "blocker_count", "verdict", "findings"}
+JSON_FINDING_KEYS = {"rule", "label", "severity", "line", "match", "excerpt"}
+
+
+def severities_for(result, rule_id):
+    return [item["severity"] for item in result["findings"] if item["rule"] == rule_id]
+
+
+class AuditEmailEditorialProfileTests(unittest.TestCase):
+    def test_profiles_include_email_and_editorial(self):
+        self.assertEqual(
+            ("general", "social", "academic", "fiction", "sop", "email", "editorial"),
+            audit.PROFILES,
+        )
+
+    def test_new_pattern_severities_follow_the_profile_table(self):
+        self.assertEqual(set(PATTERN_SEVERITY), set(PATTERN_SAMPLES))
+        for rule_id, by_profile in PATTERN_SEVERITY.items():
+            self.assertEqual(set(audit.PROFILES), set(by_profile))
+            for profile, expected in by_profile.items():
+                with self.subTest(rule=rule_id, profile=profile):
+                    result = audit.audit_text(PATTERN_SAMPLES[rule_id], profile=profile)
+                    self.assertEqual([expected], severities_for(result, rule_id))
+                    self.assertEqual(expected, result["score"])
+                    self.assertIn(result["verdict"], {"clear", "review"})
+
+    def test_hollow_question_prefixes_and_exemptions(self):
+        prefixes = ("这是一个值得", "这值得我们", "值得我们深思", "这个问题值得")
+        for prefix in prefixes:
+            text = f"费用为什么分不开？{prefix}再议。"
+            with self.subTest(prefix=prefix):
+                result = audit.audit_text(text, profile="general")
+                self.assertEqual([3], severities_for(result, "hollow_question"))
+                self.assertIn(prefix, result["findings"][0]["match"])
+
+        not_next = audit.audit_text(
+            "费用为什么分不开？有人说这是一个值得深思的问题。",
+            profile="general",
+        )
+        self.assertEqual([], severities_for(not_next, "hollow_question"))
+
+        quoted = audit.audit_text(
+            "笔记里写着：“费用为什么分不开？这是一个值得深思的问题。”旁边没有别的句子。",
+            profile="general",
+        )
+        self.assertEqual([], severities_for(quoted, "hollow_question"))
+
+        across_blank = audit.audit_text(
+            "费用为什么分不开？\n\n这是一个值得再看的分歧。",
+            profile="editorial",
+        )
+        hits = [item for item in across_blank["findings"] if item["rule"] == "hollow_question"]
+        self.assertEqual([(3, 3)], [(item["severity"], item["line"]) for item in hits])
+
+    def test_slogan_ending_only_checks_the_last_paragraph(self):
+        earlier = audit.audit_text(
+            "城市更新必将更加美好。\n\n接下来核对名单。",
+            profile="general",
+        )
+        self.assertEqual([], severities_for(earlier, "slogan_ending"))
+
+        call = audit.audit_text(
+            "前面还有一句。\n\n让我们把名单再对一遍。",
+            profile="editorial",
+        )
+        hits = [item for item in call["findings"] if item["rule"] == "slogan_ending"]
+        self.assertEqual([(1, 3)], [(item["severity"], item["line"]) for item in hits])
+        self.assertEqual("让我们", hits[0]["match"])
+
+        not_at_start = audit.audit_text("请让我们出发。", profile="general")
+        self.assertEqual([], severities_for(not_at_start, "slogan_ending"))
+
+        both = audit.audit_text(
+            "只要我们久久为功，城市更新必将更加美好，人民群众的幸福感定会更加充盈！",
+            profile="editorial",
+        )
+        hits = [item for item in both["findings"] if item["rule"] == "slogan_ending"]
+        self.assertEqual(1, len(hits))
+        self.assertEqual(1, hits[0]["severity"])
+        self.assertEqual(1, both["score"])
+
+    def test_vivid_label_matches_the_listed_words_only(self):
+        for word in ("写照", "诠释", "缩影", "注脚", "实践", "样本", "篇章"):
+            text = f"这是一次生动{word}。"
+            with self.subTest(word=word):
+                result = audit.audit_text(text, profile="email")
+                self.assertEqual([1], severities_for(result, "vivid_label"))
+        unrelated = audit.audit_text("这是一次生动的说明。", profile="general")
+        self.assertEqual([], severities_for(unrelated, "vivid_label"))
+        quoted = audit.audit_text("他引用了“生动写照”四个字。", profile="general")
+        self.assertEqual([], severities_for(quoted, "vivid_label"))
+
+    def test_metaphor_stack_needs_two_quoted_words_in_one_sentence(self):
+        one = audit.audit_text("他把工期说成“加速器”。", profile="general")
+        self.assertEqual([], severities_for(one, "metaphor_stack"))
+        bare = audit.audit_text("加速器和催化剂都写进了纪要。", profile="general")
+        self.assertEqual([], severities_for(bare, "metaphor_stack"))
+        split = audit.audit_text("他把工期说成“加速器”。预算则是“催化剂”。", profile="general")
+        self.assertEqual([], severities_for(split, "metaphor_stack"))
+        three = audit.audit_text(
+            "工期是“加速器”，预算是“催化剂”，考核是“试金石”。",
+            profile="editorial",
+        )
+        hits = [item for item in three["findings"] if item["rule"] == "metaphor_stack"]
+        self.assertEqual([1], [item["severity"] for item in hits])
+        self.assertEqual(1, three["score"])
+        for word in ("加速器", "催化剂", "试金石"):
+            self.assertIn(word, hits[0]["match"])
+        words = ("加速器", "催化剂", "试金石", "压舱石", "稳定器", "蓄水池", "助推器", "新引擎")
+        for left, right in zip(words, words[1:]):
+            paired = audit.audit_text(f"甲是“{left}”，乙是“{right}”。", profile="sop")
+            self.assertEqual([2], severities_for(paired, "metaphor_stack"), f"{left}+{right}")
+        corners = audit.audit_text("工期是「加速器」，预算是「催化剂」。", profile="general")
+        self.assertEqual([2], severities_for(corners, "metaphor_stack"))
+
+    def test_ellipsis_list_boundaries(self):
+        short = audit.audit_text("已完成，一二……", profile="general")
+        self.assertEqual([], severities_for(short, "ellipsis_list"))
+        exact = audit.audit_text("已完成，一二三四……", profile="email")
+        self.assertEqual([1], severities_for(exact, "ellipsis_list"))
+        nearest = audit.audit_text(
+            "今年先做甲，再做乙，已完成加装 1260 部，惠及居民 3.8 万户……",
+            profile="general",
+        )
+        ellipses = [item for item in nearest["findings"] if item["rule"] == "ellipsis_list"]
+        self.assertEqual(["，惠及居民 3.8 万户……"], [item["match"] for item in ellipses])
+        quoted = audit.audit_text("他说：“已完成，惠及居民很多户……”", profile="general")
+        self.assertEqual([], severities_for(quoted, "ellipsis_list"))
+        editorial = audit.audit_text("已完成加装 1260 部，惠及居民 3.8 万户……", profile="editorial")
+        self.assertEqual([0], severities_for(editorial, "ellipsis_list"))
+        self.assertEqual(0, editorial["score"])
+        self.assertEqual("clear", editorial["verdict"])
+
+    def test_four_char_chain_counts_four_or_more_and_keeps_listed_terms(self):
+        three = audit.audit_text("甲乙丙丁、戊己庚辛、壬癸子丑。", profile="general")
+        self.assertEqual([], severities_for(three, "four_char_chain"))
+        five = audit.audit_text(
+            "甲乙丙丁、戊己庚辛、壬癸子丑、寅卯辰巳、子丑寅卯。",
+            profile="general",
+        )
+        self.assertEqual([1], severities_for(five, "four_char_chain"))
+        quoted = audit.audit_text(
+            "他说：“甲乙丙丁、戊己庚辛、壬癸子丑、寅卯辰巳”。",
+            profile="general",
+        )
+        self.assertEqual([], severities_for(quoted, "four_char_chain"))
+        titled = audit.audit_text(
+            "详见《甲乙丙丁、戊己庚辛、壬癸子丑、寅卯辰巳》。",
+            profile="general",
+        )
+        self.assertEqual([], severities_for(titled, "four_char_chain"))
+
+        chain = "甲乙丙丁、戊己庚辛、壬癸子丑、寅卯辰巳。"
+        broken = audit.audit_text(chain, profile="general", keep_terms=("戊己庚辛",))
+        self.assertEqual([], severities_for(broken, "four_char_chain"))
+        whole = audit.audit_text(chain, profile="editorial", keep_terms=("甲乙丙丁、戊己庚辛、壬癸子丑、寅卯辰巳",))
+        self.assertEqual([], severities_for(whole, "four_char_chain"))
+        untouched = audit.audit_text(chain, profile="fiction", keep_terms=("并不在句中",))
+        self.assertEqual([0], severities_for(untouched, "four_char_chain"))
+
+    def test_keep_terms_exempt_contained_findings_and_leave_json_fields_unchanged(self):
+        text = "这是民生工程的生动写照。总的来说，步骤没变。"
+        without = audit.audit_text(text, profile="general")
+        self.assertEqual([1], severities_for(without, "vivid_label"))
+        self.assertEqual([2], severities_for(without, "lecture_marker"))
+        exempted = audit.audit_text(text, profile="general", keep_terms=("  生动写照  ",))
+        self.assertEqual([], severities_for(exempted, "vivid_label"))
+        self.assertEqual([2], severities_for(exempted, "lecture_marker"))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            terms = root / "terms.txt"
+            terms.write_text("# 甲乙丙丁\n\n  戊己庚辛  \n", encoding="utf-8")
+            draft = root / "draft.md"
+            draft.write_text(
+                "甲乙丙丁、戊己庚辛、壬癸子丑、寅卯辰巳。这是生动写照。\n",
+                encoding="utf-8",
+            )
+            missing = root / "missing.txt"
+            kept = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT_PATH),
+                    str(draft),
+                    "--json",
+                    "--profile",
+                    "general",
+                    "--keep-terms",
+                    str(terms),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            plain = subprocess.run(
+                [sys.executable, str(SCRIPT_PATH), str(draft), "--json", "--profile", "general"],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            absent = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT_PATH),
+                    "--stdin",
+                    "--keep-terms",
+                    str(missing),
+                ],
+                input="普通句子。",
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+        self.assertEqual(0, kept.returncode, kept.stderr)
+        self.assertEqual(0, plain.returncode, plain.stderr)
+        kept_payload = json.loads(kept.stdout)
+        plain_payload = json.loads(plain.stdout)
+        self.assertEqual(1, kept_payload["schema_version"])
+        self.assertEqual(JSON_TOP_KEYS, set(kept_payload))
+        self.assertEqual(JSON_TOP_KEYS, set(plain_payload))
+        kept_result = next(iter(kept_payload["results"].values()))
+        plain_result = next(iter(plain_payload["results"].values()))
+        self.assertEqual(JSON_RESULT_KEYS, set(kept_result))
+        self.assertEqual(JSON_RESULT_KEYS, set(plain_result))
+        self.assertIn(kept_result["verdict"], {"clear", "review"})
+        self.assertIn(plain_result["verdict"], {"clear", "review"})
+        self.assertNotIn("four_char_chain", rules_of(kept_result))
+        self.assertIn("four_char_chain", rules_of(plain_result))
+        self.assertIn("vivid_label", rules_of(kept_result))
+        self.assertEqual(JSON_FINDING_KEYS, set(kept_result["findings"][0]))
+        self.assertEqual(2, absent.returncode)
+        self.assertIn("not found", absent.stderr.lower())
+        self.assertNotIn("Traceback", absent.stderr)
+
+    def test_email_profile_lowers_sequence_and_closing_question_only(self):
+        sequence = "先关闭总闸，再拆下外壳。"
+        question = "你觉得这个方案怎么样？"
+        for profile, sequence_severity, question_severity in (
+            ("general", 2, 3),
+            ("email", 1, 1),
+            ("editorial", 2, 3),
+        ):
+            with self.subTest(profile=profile):
+                sequenced = audit.audit_text(sequence, profile=profile)
+                asked = audit.audit_text(question, profile=profile)
+                self.assertEqual([sequence_severity], severities_for(sequenced, "staged_sequence"))
+                self.assertEqual([question_severity], severities_for(asked, "ending_engagement_question"))
+
+        fixture_dir = SKILL_ROOT / "tests" / "fixtures"
+        before = audit.audit_text(
+            (fixture_dir / "email_comment_before.md").read_text(encoding="utf-8"),
+            profile="email",
+        )
+        after = audit.audit_text(
+            (fixture_dir / "email_comment_after.md").read_text(encoding="utf-8"),
+            profile="email",
+        )
+        self.assertEqual("review", before["verdict"])
+        self.assertEqual("clear", after["verdict"])
+        self.assertEqual([1], severities_for(after, "staged_sequence"))
+
+    def test_editorial_profile_lowers_enumeration_and_template_colon(self):
+        # Two non-overlapping hits: one match consumes 首先…其次, so a second
+        # pair has to sit in its own sentence to be counted again.
+        enumeration = "首先说明背景，其次公布结果。一方面保留记录，另一方面核对名单。"
+        single = "首先要凝聚共识，其次要完善机制，最后要强化保障。"
+        template = "概念：甲\n原因：乙\n结论：丙\n"
+        general_enum = audit.audit_text(enumeration, profile="general")
+        editorial_enum = audit.audit_text(enumeration, profile="editorial")
+        self.assertEqual([2, 2], severities_for(general_enum, "rigid_enumeration"))
+        self.assertEqual("review", general_enum["verdict"])
+        self.assertEqual([0, 0], severities_for(editorial_enum, "rigid_enumeration"))
+        self.assertEqual(0, editorial_enum["score"])
+        self.assertEqual("clear", editorial_enum["verdict"])
+        general_single = audit.audit_text(single, profile="general")
+        editorial_single = audit.audit_text(single, profile="editorial")
+        self.assertEqual([2], severities_for(general_single, "rigid_enumeration"))
+        self.assertEqual([0], severities_for(editorial_single, "rigid_enumeration"))
+
+        general_template = audit.audit_text(template, profile="general")
+        editorial_template = audit.audit_text(template, profile="editorial")
+        self.assertEqual([2], severities_for(general_template, "template_colon"))
+        self.assertEqual([0], severities_for(editorial_template, "template_colon"))
+
+    def test_binary_contrast_stays_listed_at_zero_for_owner_decisions(self):
+        additive = "这不只是记录，更是复盘。"
+        definitional = "何谓好用？不是功能多，而是三步之内能完成报销。"
+        for profile in audit.PROFILES:
+            with self.subTest(profile=profile):
+                added = audit.audit_text(additive, profile=profile)
+                defined = audit.audit_text(definitional, profile=profile)
+                self.assertEqual(["binary_contrast"], [item["rule"] for item in added["findings"]])
+                self.assertEqual([0], severities_for(added, "binary_contrast"))
+                self.assertNotIn("additive_contrast", rules_of(added))
+                self.assertEqual([0], severities_for(defined, "binary_contrast"))
+                self.assertEqual([], severities_for(defined, "hollow_question"))
+                self.assertEqual(0, defined["score"])
+                self.assertEqual("clear", defined["verdict"])
+
+    def test_editorial_fixture_reviews_before_and_clears_after(self):
+        fixture_dir = SKILL_ROOT / "tests" / "fixtures"
+        before = audit.audit_text(
+            (fixture_dir / "editorial_commentary_before.md").read_text(encoding="utf-8"),
+            profile="editorial",
+        )
+        after = audit.audit_text(
+            (fixture_dir / "editorial_commentary_after.md").read_text(encoding="utf-8"),
+            profile="editorial",
+        )
+        scored = sorted(
+            (item["rule"], item["severity"]) for item in before["findings"] if item["severity"] > 0
+        )
+        self.assertEqual(
+            [("hollow_question", 3), ("slogan_ending", 1), ("vivid_label", 1)],
+            scored,
+        )
+        self.assertEqual(5, before["score"])
+        self.assertEqual("review", before["verdict"])
+        for rule_id in ("binary_contrast", "rigid_enumeration", "ellipsis_list"):
+            self.assertTrue(severities_for(before, rule_id))
+            self.assertTrue(all(item == 0 for item in severities_for(before, rule_id)))
+        hollow = [item for item in before["findings"] if item["rule"] == "hollow_question"]
+        slogan = [item for item in before["findings"] if item["rule"] == "slogan_ending"]
+        self.assertEqual([7], [item["line"] for item in hollow])
+        self.assertEqual([13], [item["line"] for item in slogan])
+
+        self.assertEqual([], [item for item in after["findings"] if item["severity"] > 0])
+        self.assertEqual(0, after["score"])
+        self.assertEqual("clear", after["verdict"])
+        self.assertEqual([0], severities_for(after, "ellipsis_list"))
+        self.assertEqual(1, after["finding_count"])
+
+
 if __name__ == "__main__":
     unittest.main()

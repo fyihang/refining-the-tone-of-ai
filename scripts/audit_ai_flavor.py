@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-PROFILES = ("general", "social", "academic", "fiction", "sop")
+PROFILES = ("general", "social", "academic", "fiction", "sop", "email", "editorial")
 TEXT_SUFFIXES = {".md", ".markdown", ".txt"}
 SENTENCE_BODY = r"[^\n。！？!?]"
 VERDICT_SEMANTICS = (
@@ -25,10 +25,34 @@ VERDICT_SEMANTICS = (
 )
 PROFILE_SEVERITY_OVERRIDES = {
     "academic": {"essence_claim": 1},
-    "fiction": {"fiction_cliche": 2},
+    "fiction": {
+        "fiction_cliche": 2,
+        "hollow_question": 2,
+        "slogan_ending": 1,
+        "vivid_label": 0,
+        "metaphor_stack": 0,
+        "ellipsis_list": 0,
+        "four_char_chain": 0,
+    },
     "social": {"inflated_abstract_words": 2},
     "sop": {"staged_sequence": 0, "rigid_enumeration": 0},
+    "email": {"ending_engagement_question": 1, "staged_sequence": 1},
+    "editorial": {
+        "rigid_enumeration": 0,
+        "template_colon": 0,
+        "slogan_ending": 1,
+        "vivid_label": 1,
+        "metaphor_stack": 1,
+        "ellipsis_list": 0,
+        "four_char_chain": 0,
+    },
 }
+_HOLLOW_PREFIXES = ("这是一个值得", "这值得我们", "值得我们深思", "这个问题值得")
+_SLOGAN_ENDING = re.compile(
+    r"(?:必将|定能|定会|定将)[^\n。！？!?]{0,40}?(?:更加|美好|辉煌|澎湃|磅礴|光明)"
+)
+_FOUR_CHAR_CHAIN = re.compile(r"(?:[\u4e00-\u9fff]{4}、){3,}[\u4e00-\u9fff]{4}")
+_METAPHOR_WORDS = ("加速器", "催化剂", "试金石", "压舱石", "稳定器", "蓄水池", "助推器", "新引擎")
 
 
 @dataclass(frozen=True)
@@ -139,7 +163,23 @@ RULES = (
             "淡淡地说",
         ),
     ),
+    Rule(
+        "vivid_label",
+        "评价性标签",
+        1,
+        re.compile(r"生动(?:写照|诠释|缩影|注脚|实践|样本|篇章)"),
+    ),
+    Rule(
+        "ellipsis_list",
+        "省略号收束列举",
+        1,
+        re.compile(r"[；，][^；，\n。！？!?]{4,60}……"),
+    ),
 )
+_METAPHOR_STACK = Rule("metaphor_stack", "引号隐喻堆叠", 2)
+_FOUR_CHAR_RULE = Rule("four_char_chain", "四字顿号链", 1)
+_HOLLOW_QUESTION = Rule("hollow_question", "空转设问", 3)
+_SLOGAN_RULE = Rule("slogan_ending", "口号式结尾", 2)
 
 
 def line_number(text: str, index: int) -> int:
@@ -265,8 +305,108 @@ def is_exempt(
     return False
 
 
+def severity_for(rule_id: str, default: int, profile: str) -> int:
+    return PROFILE_SEVERITY_OVERRIDES.get(profile, {}).get(rule_id, default)
+
+
 def effective_severity(rule: Rule, profile: str) -> int:
-    return PROFILE_SEVERITY_OVERRIDES.get(profile, {}).get(rule.rule_id, rule.severity)
+    return severity_for(rule.rule_id, rule.severity, profile)
+
+
+def normalize_keep_terms(keep_terms: tuple[str, ...] | list[str] | None) -> tuple[str, ...]:
+    """Exact formulations, one string each. Blank entries are ignored."""
+    terms: list[str] = []
+    seen: set[str] = set()
+    for raw in keep_terms or ():
+        term = raw.strip()
+        if term and term not in seen:
+            terms.append(term)
+            seen.add(term)
+    return tuple(terms)
+
+
+def keep_term_spans(text: str, terms: tuple[str, ...]) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    for term in terms:
+        start = 0
+        while True:
+            index = text.find(term, start)
+            if index < 0:
+                break
+            spans.append((index, index + len(term)))
+            start = index + len(term)
+    return spans
+
+
+def _sentence_spans(text: str) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    start = 0
+    for match in re.finditer(r"[。！？!?]", text):
+        spans.append((start, match.end()))
+        start = match.end()
+    if start < len(text):
+        spans.append((start, len(text)))
+    return spans
+
+
+def find_metaphor_stacks(
+    text: str,
+    profile: str,
+    protected: list[tuple[int, int]],
+    quoted: list[tuple[int, int]],
+) -> list[dict]:
+    """One finding per sentence that quotes at least two functional metaphors.
+
+    The quotation marks are the signal, so a quoted word is not exempt. A word
+    inside a code span, a book title, or a --keep-terms span still is.
+    """
+    severity = severity_for(_METAPHOR_STACK.rule_id, _METAPHOR_STACK.severity, profile)
+    findings: list[dict] = []
+    for sentence_start, sentence_end in _sentence_spans(text):
+        hits: list[tuple[int, int, str]] = []
+        for word in _METAPHOR_WORDS:
+            search_from = sentence_start
+            while True:
+                index = text.find(word, search_from, sentence_end)
+                if index < 0:
+                    break
+                word_end = index + len(word)
+                quoted_word = contained_in(index, word_end, quoted)
+                protected_word = contained_in(index, word_end, protected)
+                if quoted_word and not protected_word:
+                    hits.append((index, word_end, word))
+                search_from = word_end
+        if len(hits) < 2:
+            continue
+        hits.sort()
+        match_text = "、".join(word for _, _, word in hits)
+        findings.append(
+            finding(_METAPHOR_STACK, severity, text, hits[0][0], hits[-1][1], match_text)
+        )
+    return findings
+
+
+def find_four_char_chains(text: str, profile: str, masked: list[tuple[int, int]]) -> list[dict]:
+    """Four or more four-character words joined by enumeration commas.
+
+    Keep-term, quote, title, and code spans are masked first, so a listed
+    formulation breaks a chain instead of hiding the words around it.
+    """
+    visible = mask_spans(text, masked)
+    severity = severity_for(_FOUR_CHAR_RULE.rule_id, _FOUR_CHAR_RULE.severity, profile)
+    findings: list[dict] = []
+    for match in _FOUR_CHAR_CHAIN.finditer(visible):
+        findings.append(
+            finding(
+                _FOUR_CHAR_RULE,
+                severity,
+                text,
+                match.start(),
+                match.end(),
+                text[match.start() : match.end()],
+            )
+        )
+    return findings
 
 
 def finding(rule: Rule, severity: int, text: str, start: int, end: int, match_text: str) -> dict:
@@ -280,12 +420,19 @@ def finding(rule: Rule, severity: int, text: str, start: int, end: int, match_te
     }
 
 
-def audit_text(text: str, profile: str = "general") -> dict:
+def audit_text(
+    text: str,
+    profile: str = "general",
+    keep_terms: tuple[str, ...] | list[str] | None = None,
+) -> dict:
     if profile not in PROFILES:
         raise ValueError(f"unsupported profile: {profile}")
 
     findings: list[dict] = []
+    terms = normalize_keep_terms(keep_terms)
     protected = protected_spans(text)
+    protected.extend(keep_term_spans(text, terms))
+    protected.sort()
     quoted = quoted_spans(text)
 
     for rule in RULES:
@@ -302,7 +449,10 @@ def audit_text(text: str, profile: str = "general") -> dict:
             if not is_exempt(start, end, protected, quoted):
                 findings.append(finding(rule, severity, text, start, end, match_text))
 
-    findings.extend(audit_shape(text, sorted(protected + quoted)))
+    masked = sorted(protected + quoted)
+    findings.extend(find_metaphor_stacks(text, profile, protected, quoted))
+    findings.extend(find_four_char_chains(text, profile, masked))
+    findings.extend(audit_shape(text, masked, profile))
     findings.sort(key=lambda item: (item["line"], -item["severity"], item["rule"], item["match"]))
     score = sum(item["severity"] for item in findings)
     blockers = [item for item in findings if item["severity"] >= 3]
@@ -327,7 +477,7 @@ def mask_spans(text: str, spans: list[tuple[int, int]]) -> str:
     return "".join(characters)
 
 
-def audit_shape(text: str, protected: list[tuple[int, int]]) -> list[dict]:
+def audit_shape(text: str, protected: list[tuple[int, int]], profile: str = "general") -> list[dict]:
     findings: list[dict] = []
     visible_text = mask_spans(text, protected)
     nonempty_lines = [(number, line.strip()) for number, line in enumerate(visible_text.splitlines(), start=1) if line.strip()]
@@ -342,7 +492,7 @@ def audit_shape(text: str, protected: list[tuple[int, int]]) -> list[dict]:
             {
                 "rule": "template_colon",
                 "label": "冒号模板重复",
-                "severity": 2,
+                "severity": severity_for("template_colon", 2, profile),
                 "line": colon_lines[0][0],
                 "match": f"{len(colon_lines)} colon-template lines",
                 "excerpt": " / ".join(line for _, line in colon_lines[:3]),
@@ -427,12 +577,15 @@ def audit_shape(text: str, protected: list[tuple[int, int]]) -> list[dict]:
             {
                 "rule": "ending_engagement_question",
                 "label": "结尾假互动提问",
-                "severity": 3,
+                "severity": severity_for("ending_engagement_question", 3, profile),
                 "line": final_line_number,
                 "match": final_line,
                 "excerpt": final_line,
             }
         )
+
+    findings.extend(find_hollow_questions(text, visible_text, profile))
+    findings.extend(find_slogan_ending(text, visible_text, profile))
 
     second_person = list(re.finditer(r"你|大家", visible_text))
     if len(second_person) >= 6:
@@ -448,6 +601,69 @@ def audit_shape(text: str, protected: list[tuple[int, int]]) -> list[dict]:
         )
 
     return findings
+
+
+def find_hollow_questions(text: str, visible_text: str, profile: str) -> list[dict]:
+    """The sentence after a question mark opens with an empty-pondering prefix."""
+    severity = severity_for(_HOLLOW_QUESTION.rule_id, _HOLLOW_QUESTION.severity, profile)
+    findings: list[dict] = []
+    for match in re.finditer(r"[？?]", visible_text):
+        rest = visible_text[match.end() :]
+        stripped = rest.lstrip(" \t\r\n")
+        prefix = next((item for item in _HOLLOW_PREFIXES if stripped.startswith(item)), None)
+        if prefix is None:
+            continue
+        prefix_at = match.end() + (len(rest) - len(stripped))
+        end = prefix_at + len(prefix)
+        while end < len(text) and text[end] not in "。！？!?\n":
+            end += 1
+        if end < len(text) and text[end] in "。！？!?":
+            end += 1
+        findings.append(
+            finding(_HOLLOW_QUESTION, severity, text, prefix_at, end, text[prefix_at:end].strip())
+        )
+    return findings
+
+
+def find_slogan_ending(text: str, visible_text: str, profile: str) -> list[dict]:
+    """One finding when the last paragraph is a slogan, however many clauses match."""
+    content: list[tuple[int, str]] = []
+    offset = 0
+    parts = visible_text.split("\n\n")
+    for index, paragraph in enumerate(parts):
+        stripped = paragraph.lstrip()
+        if stripped and not stripped.startswith("#"):
+            content.append((offset + (len(paragraph) - len(stripped)), stripped))
+        offset += len(paragraph)
+        if index != len(parts) - 1:
+            offset += 2
+    if not content:
+        return []
+    content_start, paragraph = content[-1]
+    slogan = _SLOGAN_ENDING.search(paragraph)
+    if slogan is None and not paragraph.startswith("让我们"):
+        return []
+    if slogan is not None:
+        match_text = slogan.group(0)
+        start = content_start + slogan.start()
+    else:
+        match_text = "让我们"
+        start = content_start
+    severity = severity_for(_SLOGAN_RULE.rule_id, _SLOGAN_RULE.severity, profile)
+    return [finding(_SLOGAN_RULE, severity, text, start, start + len(match_text), match_text)]
+
+
+def load_keep_terms(path: str) -> tuple[str, ...]:
+    file = Path(path)
+    if not file.is_file():
+        raise ValueError(f"not found: {path}")
+    terms: list[str] = []
+    for raw in file.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        terms.append(line)
+    return tuple(terms)
 
 
 def expand_input_paths(raw_paths: list[str], recursive: bool = False) -> list[Path]:
@@ -498,6 +714,11 @@ def main() -> int:
         action="store_true",
         help="When scanning a directory, include text files in subdirectories",
     )
+    parser.add_argument(
+        "--keep-terms",
+        metavar="FILE",
+        help="Exempt exact formulations listed in FILE, one per line. Blank lines and # comments are ignored",
+    )
     args = parser.parse_args()
 
     if args.stdin and args.paths:
@@ -506,6 +727,7 @@ def main() -> int:
         parser.error("provide at least one path or use --stdin")
 
     try:
+        keep_terms = load_keep_terms(args.keep_terms) if args.keep_terms else ()
         if args.stdin:
             documents = [("<stdin>", sys.stdin.read())]
         else:
@@ -517,7 +739,9 @@ def main() -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
-    results = {name: audit_text(text, profile=args.profile) for name, text in documents}
+    results = {
+        name: audit_text(text, profile=args.profile, keep_terms=keep_terms) for name, text in documents
+    }
     failed = any(result["verdict"] == "review" for result in results.values())
 
     if args.json:
