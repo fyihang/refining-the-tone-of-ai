@@ -1,4 +1,4 @@
-# refining-the-tone-of-ai
+# AI 语气调整（refining-the-tone-of-ai）
 
 一个面向中文写作的 Agent Skill，用于减少模板化、机械化和过度润色造成的“AI 味”，同时保留原文的事实、立场、文体、约束和作者声音。
 
@@ -32,6 +32,18 @@
 ## 安装
 
 推荐安装到跨运行时可发现的 `.agents/skills` 目录，Codex、Kimi Code 等客户端均可自动识别。
+
+### 交给 Agent 自动安装
+
+复制以下提示词并发送给支持执行命令的 Agent：
+
+```text
+请直接为我安装 Agent Skill「AI 语气调整」（refining-the-tone-of-ai），不要只提供安装命令。
+
+1. 将仓库 https://github.com/fyihang/refining-the-tone-of-ai.git 安装到当前用户的通用 skills 目录：macOS 或 Linux 使用 ~/.agents/skills/refining-the-tone-of-ai，Windows 使用 %USERPROFILE%\.agents\skills\refining-the-tone-of-ai。
+2. 目标目录不存在时，使用 git clone 安装；如果它已经是对应仓库的 Git 工作区，使用 git pull --ff-only 更新。如果目录中存在其他内容，或本地修改导致无法安全更新，请停止并说明情况，不要覆盖或删除现有文件。
+3. 安装后确认目标目录中存在 SKILL.md，并告诉我实际安装路径。最后提醒我新建会话或重启客户端，以便发现这个 Skill。
+```
 
 ### PowerShell
 
