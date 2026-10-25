@@ -30,6 +30,7 @@ PROFILE_SEVERITY_OVERRIDES = {
         "hollow_question": 2,
         "slogan_ending": 1,
         "vivid_label": 0,
+        "empty_promotion": 0,
         "metaphor_stack": 0,
         "ellipsis_list": 0,
         "four_char_chain": 0,
@@ -128,12 +129,20 @@ RULES = (
         terms=("赋能", "助力", "抓手", "闭环", "深耕", "沉淀", "价值感", "长期主义", "意义深远", "前景广阔"),
     ),
     Rule(
+        "vague_attribution",
+        "模糊权威归因",
+        2,
+        re.compile(
+            r"研究表明|专家认为|业内人士表示|有研究指出|业内普遍认为|"
+            r"观察者指出|一些批评者认为|多个来源(?:显示|指出)"
+        ),
+    ),
+    Rule(
         "academic_filler",
         "学术/技术填充套话",
         2,
         re.compile(
             r"(?:基于|依据)[^。！？!?\n]{0,18}(?:理论|框架)|"
-            r"(?:研究表明|专家认为|业内普遍认为)|"
             r"(?:综上所述|此案例(?:印证|揭示|说明)了|具有重要(?:理论|现实)?意义|提供了新思路|开辟了新方向)"
         ),
     ),
@@ -170,6 +179,16 @@ RULES = (
         "评价性标签",
         1,
         re.compile(r"生动(?:写照|诠释|缩影|注脚|实践|样本|篇章)"),
+    ),
+    Rule(
+        "empty_promotion",
+        "空泛宣传式赞美",
+        1,
+        re.compile(
+            r"(?:深厚|厚重|丰富)的[^。！？!?，,；;\n]{0,12}(?:文化底蕴|历史底蕴|文化内涵)|"
+            r"(?:迷人|独特|深厚)的[^。！？!?，,；;\n]{0,12}(?:历史魅力|文化魅力|自然魅力)|"
+            r"充满活力的[^。！？!?，,；;\n]{0,12}(?:场馆|城市|社区|团队|企业|组织)"
+        ),
     ),
     Rule(
         "ellipsis_list",
@@ -285,10 +304,8 @@ def iter_term_matches(text: str, term: str):
         start = index + len(term)
 
 
-def cited_research_claim(text: str, end: int, match_text: str) -> bool:
-    """Skip 研究表明 when a citation marker begins within the next 30 characters."""
-    if match_text != "研究表明":
-        return False
+def cited_research_claim(text: str, end: int) -> bool:
+    """Skip an attribution when a citation marker begins within the next 30 characters."""
     region = text[end : end + 80]
     marker = _CITATION_MARKER.search(region)
     return marker is not None and marker.start() < 30
@@ -478,7 +495,7 @@ def audit_text(
             matches.extend(iter_term_matches(text, term))
 
         for start, end, match_text in matches:
-            if rule.rule_id == "academic_filler" and cited_research_claim(text, end, match_text):
+            if rule.rule_id == "vague_attribution" and cited_research_claim(text, end):
                 continue
             if not is_exempt(start, end, protected, quoted):
                 findings.append(finding(rule, severity, text, start, end, match_text))

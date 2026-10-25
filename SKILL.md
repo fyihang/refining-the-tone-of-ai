@@ -126,7 +126,7 @@ When this package is available locally, run the script from the skill directory 
 python <skill-dir>/scripts/audit_ai_flavor.py draft.md --profile general
 ```
 
-Profiles are `general`, `social`, `academic`, `fiction`, `sop`, `email`, and `editorial`. The script also accepts `--stdin`, glob patterns, `--json`, `--recursive`, and `--keep-terms`. Findings are candidates, not verdicts: check each one against Context Decisions, and check every `binary_contrast` finding with Contrast Check. `clear` means no configured pattern requires review; it is not a quality or authorship judgment.
+Profiles are `general`, `social`, `academic`, `fiction`, `sop`, `email`, and `editorial`. The script also accepts `--stdin`, glob patterns, `--json`, `--recursive`, and `--keep-terms`. Findings are candidates, not verdicts: check each one against Context Decisions, including every `vague_attribution` and `empty_promotion` finding, and check every `binary_contrast` finding with Contrast Check. `clear` means no configured pattern requires review; it is not a quality or authorship judgment.
 
 ## Common Mistakes
 

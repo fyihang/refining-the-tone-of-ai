@@ -121,6 +121,8 @@ git -C "$env:USERPROFILE\.agents\skills\refining-the-tone-of-ai" pull --ff-only
 
 `scripts/audit_ai_flavor.py` 可以扫描文本文件、目录、glob 或标准输入。脚本仅标记已配置的表达模式，不能代替人工编辑判断。
 
+其中，`vague_attribution` 标记“专家认为”“业内人士表示”“有研究指出”等模糊归因，严重度为 2；附近 30 个字符内出现带年份或编号的引文标记时豁免，引语、代码和 `--keep-terms` 指定的固定提法也受保护。`empty_promotion` 标记配置范围内的组合式空泛赞美，严重度为 1；`fiction` 下为 0 级，只列出复核线索，不计入分数或复核判定。两条规则都只是提示人工检查，不会判断观点是否真实或证据是否充分。
+
 ### 基本扫描
 
 ```powershell

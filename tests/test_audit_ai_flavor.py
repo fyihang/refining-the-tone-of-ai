@@ -391,21 +391,21 @@ class AuditCitationAndQuestionRegressionTests(unittest.TestCase):
             "研究表明该方法有效[12]。",
             "研究表明该方法有效(Chen, 2020)。",
             "研究表明" + ("补" * 29) + "（Ada, 2020）。",
+            "专家认为这种方法可行（Chen, 2020）。",
         ):
             with self.subTest(text=text):
                 result = audit.audit_text(text, profile="academic")
-                self.assertNotIn("academic_filler", rules_of(result))
+                self.assertNotIn("vague_attribution", rules_of(result))
 
     def test_research_claim_without_nearby_citation_still_matches(self):
         for text in (
             "研究表明，注意力会回升。",
             "研究表明[待补]。",
             "研究表明" + ("补" * 30) + "（Ada, 2020）。",
-            "专家认为这种方法可行（Chen, 2020）。",
         ):
             with self.subTest(text=text):
                 result = audit.audit_text(text, profile="academic")
-                fillers = [item for item in result["findings"] if item["rule"] == "academic_filler"]
+                fillers = [item for item in result["findings"] if item["rule"] == "vague_attribution"]
                 self.assertEqual([2], [item["severity"] for item in fillers])
 
     def test_transactional_closing_questions_are_skipped(self):
@@ -580,6 +580,75 @@ class AuditVerdictThresholdTests(unittest.TestCase):
             [("essence_claim", 1), ("staged_sequence", 2)],
             sorted((item["rule"], item["severity"]) for item in result["findings"]),
         )
+
+
+class AuditAttributionAndPromotionTests(unittest.TestCase):
+    def test_vague_attribution_is_reviewed_in_every_profile(self):
+        samples = (
+            "专家认为这种方法可行。",
+            "业内人士表示需求会增长。",
+            "有研究指出注意力会回升。",
+            "研究表明注意力会回升。",
+            "业内普遍认为这种方法可行。",
+        )
+        for profile in audit.PROFILES:
+            for text in samples:
+                with self.subTest(profile=profile, text=text):
+                    result = audit.audit_text(text, profile=profile)
+                    self.assertEqual([2], severities_for(result, "vague_attribution"))
+                    self.assertNotIn("academic_filler", rules_of(result))
+
+    def test_identifiable_and_cited_attribution_is_not_vague(self):
+        for text in (
+            "林某认为这种方法可行。",
+            "专家认为这种方法可行（Chen, 2020）。",
+            "业内人士表示需求会增长[12]。",
+            "有研究指出注意力会回升（林某，2019）。",
+            "报告写道：“专家认为这种方法可行。”",
+        ):
+            with self.subTest(text=text):
+                result = audit.audit_text(text, profile="academic")
+                self.assertNotIn("vague_attribution", rules_of(result))
+
+    def test_keep_terms_exempt_vague_attribution(self):
+        result = audit.audit_text(
+            "文件原文保留“专家认为”这一表述。",
+            profile="general",
+            keep_terms=("专家认为",),
+        )
+        self.assertNotIn("vague_attribution", rules_of(result))
+
+    def test_empty_promotion_matches_only_configured_combinations(self):
+        for text in (
+            "这座场馆拥有深厚的文化底蕴。",
+            "这座城市有迷人的历史魅力。",
+            "这是一座充满活力的场馆。",
+        ):
+            with self.subTest(text=text):
+                result = audit.audit_text(text, profile="general")
+                self.assertEqual([1], severities_for(result, "empty_promotion"))
+                self.assertEqual("clear", result["verdict"])
+
+        for text in (
+            "馆藏数字化率连续两年居全市第一。",
+            "这座场馆保存着完整的清代档案。",
+            "这项工作很重要。",
+        ):
+            with self.subTest(text=text):
+                result = audit.audit_text(text, profile="general")
+                self.assertNotIn("empty_promotion", rules_of(result))
+
+    def test_empty_promotion_respects_fiction_quotes_and_keep_terms(self):
+        fiction = audit.audit_text("这是一座充满活力的场馆。", profile="fiction")
+        self.assertEqual([0], severities_for(fiction, "empty_promotion"))
+        quoted = audit.audit_text("他写道：“这座场馆拥有深厚的文化底蕴。”", profile="general")
+        self.assertNotIn("empty_promotion", rules_of(quoted))
+        kept = audit.audit_text(
+            "这座场馆拥有深厚的文化底蕴。",
+            profile="general",
+            keep_terms=("深厚的文化底蕴",),
+        )
+        self.assertNotIn("empty_promotion", rules_of(kept))
 
 
 # Severities from P2-11. general / social / academic / sop share one column.
