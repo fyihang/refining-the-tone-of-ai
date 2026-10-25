@@ -109,7 +109,7 @@ The revision drops a contrast whose negated side has no source, keeps the stated
 - Every rhetorical question kept in narration is answered within the next two sentences with source content, or is quoted, dialogue, or genuinely addressed to the reader (requested CTA, survey, interview, or request to confirm). Never invent an answer to satisfy this check.
 - No case, quotation, authority, number, objection, or cost was added to make a technique work, and no material was moved across paragraphs without the user's request.
 - No vague attribution remains unless the source identifies the authority, study, or evidence; removing vague attribution has not turned an opinion into an established fact or altered a sourced claim.
-- Empty promotional or evaluative wording is gone, while meaningful criteria, comparisons, consequences, and supported judgments remain unchanged; no concrete detail was added to replace praise.
+- Empty promotional or evaluative wording identified for revision under Context Decisions is gone, while meaningful criteria, comparisons, consequences, and supported judgments remain unchanged; no concrete detail was added to replace praise.
 
 ## Boundaries
 
