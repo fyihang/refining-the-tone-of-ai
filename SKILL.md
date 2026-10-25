@@ -1,9 +1,9 @@
 ---
 name: refining-the-tone-of-ai
-description: Use when Chinese prose sounds AI-generated, template-like, mechanically structured, overly polished, or inconsistent with the author's voice, including requests to 去AI味, 降低AI感, or 改得更像人写.
+description: AI 语气调整。Use when Chinese prose sounds AI-generated, template-like, mechanically structured, overly polished, or inconsistent with the author's voice, including requests to 去AI味, 降低AI感, or 改得更像人写.
 ---
 
-# Refining the Tone of AI
+# AI 语气调整
 
 ## Overview
 
