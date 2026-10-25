@@ -36,9 +36,10 @@ Follow this order:
 | Qualifiers such as `当然`, `也要看到`, `同时注意`, `并不等于` | Never delete them as filler; shorten only if the stated limit survives | Always preserve the limit, exception, shortfall, or cost they state |
 | Three-part lists and triads | Items are near-synonyms or name no object; compress them, and do not invent objects | Each item names a distinct object, actor, metric, or step |
 | Slogan endings: `必将` / `定能` / `定会` with grand imagery, slogan couplets, `让我们…` | The ending only restates the thesis with grand imagery | The ending carries a fixed formulation, the publication requires it, or the user asks to keep it |
-| Evaluative labels (`生动写照`, `生动实践`, `生动注脚`) and stacked metaphors (`加速器`, `催化剂`, `试金石`) | They replace information with a verdict, or several metaphors decorate one sentence | The label is part of a fixed formulation, or one metaphor carries the reasoning through the paragraph |
+| Evaluative labels (`生动写照`, `生动实践`, `生动注脚`), empty promotional wording (`深厚的文化底蕴和历史魅力`), and stacked metaphors (`加速器`, `催化剂`, `试金石`) | They replace information with a verdict or abstract praise, or several metaphors decorate one sentence; remove only the empty wording, using concrete details already in the source when available | The evaluation states a distinct criterion, comparison, consequence, or supported judgment; the label is part of a fixed formulation; or one metaphor carries the reasoning through the paragraph |
 | Example lists closed with `……` | Examples trail off in essays, emails, technical or academic prose; close the list with 等 or end it at the last listed item, and never add items | Editorial or official register, or a quotation |
 | Authority quotations | Never add one to make a claim sound weightier | Keep every quotation in the source, with its attribution |
+| Vague attribution (`专家认为`, `业内人士表示`, `有研究指出`) | No identifiable authority, study, or supporting evidence is given: remove the appeal to authority and keep the claim only as the source's own claim, without upgrading it to established fact | The source identifies the authority, study, or evidence; preserve its attribution, citation, and evidence strength |
 
 Common route markers include `下面我们来`, `接下来我会`, `我们可以看到`, `希望这能帮到你`, `作为AI`, and `截至我的知识`. Lecture markers such as `总的来说`, `值得注意的是`, `拆一拆`, and `聊一聊` are weaker signals: revise them when they narrate instead of adding content.
 
@@ -107,6 +108,8 @@ The revision drops a contrast whose negated side has no source, keeps the stated
 - No remaining contrast negates a claim that has no source in the text, its title, the user's request, or an explicit reader question; wherever an invented target was removed, the claim it framed is unchanged.
 - Every rhetorical question kept in narration is answered within the next two sentences with source content, or is quoted, dialogue, or genuinely addressed to the reader (requested CTA, survey, interview, or request to confirm). Never invent an answer to satisfy this check.
 - No case, quotation, authority, number, objection, or cost was added to make a technique work, and no material was moved across paragraphs without the user's request.
+- No vague attribution remains unless the source identifies the authority, study, or evidence; removing vague attribution has not turned an opinion into an established fact or altered a sourced claim.
+- Empty promotional or evaluative wording is gone, while meaningful criteria, comparisons, consequences, and supported judgments remain unchanged; no concrete detail was added to replace praise.
 
 ## Boundaries
 
@@ -132,5 +135,7 @@ Profiles are `general`, `social`, `academic`, `fiction`, `sop`, `email`, and `ed
 | Replacing every flagged phrase | Decide from meaning, register, and user constraints |
 | Making all paragraphs deliberately uneven | Vary structure only when repeated symmetry is the actual problem |
 | Adding anecdotes or promises to sound human | Preserve the evidence boundary |
+| Keeping vague authority such as `专家认为`, or deleting sourced attribution | Remove unsupported appeals to authority without strengthening the claim; keep identifiable sources and their evidence strength |
+| Deleting every evaluative or promotional phrase | Remove only empty praise; retain criteria, comparisons, consequences, and supported judgments |
 | Removing required sequence markers | Keep operational and chronological dependencies explicit |
 | Returning an explanation by default | Return only the revision unless notes were requested. When step 4 requires a question, ask it and do not send a partial revision |
