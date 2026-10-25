@@ -46,25 +46,37 @@
 3. 安装后确认目标目录中存在 SKILL.md，并告诉我实际安装路径。最后提醒我新建会话或重启客户端，以便发现这个 Skill。
 ```
 
-### PowerShell
+### Windows（PowerShell）
+
+在 PowerShell 中执行以下命令安装：
 
 ```powershell
 git clone https://github.com/fyihang/refining-the-tone-of-ai.git "$env:USERPROFILE\.agents\skills\refining-the-tone-of-ai"
 ```
 
-### Bash
-
-```bash
-git clone https://github.com/fyihang/refining-the-tone-of-ai.git ~/.agents/skills/refining-the-tone-of-ai
-```
-
-安装后新建会话或重启客户端，让 Skill 被重新发现。
-
-更新现有安装：
+已经安装过时，使用以下命令更新：
 
 ```powershell
 git -C "$env:USERPROFILE\.agents\skills\refining-the-tone-of-ai" pull --ff-only
 ```
+
+### macOS / Linux（Terminal 或 Bash）
+
+在 macOS 的“终端”或 Linux 的 Bash 中执行以下命令安装：
+
+```bash
+git clone https://github.com/fyihang/refining-the-tone-of-ai.git "$HOME/.agents/skills/refining-the-tone-of-ai"
+```
+
+已经安装过时，使用以下命令更新：
+
+```bash
+git -C "$HOME/.agents/skills/refining-the-tone-of-ai" pull --ff-only
+```
+
+注意：macOS 终端默认使用 zsh，不能执行 PowerShell 的 `$env:USERPROFILE` 语法，路径分隔符也应使用 `/`。macOS 和 Linux 可以使用 `$HOME` 或 `~` 表示当前用户的主目录。
+
+安装或更新后，新建会话或重启客户端，让 Skill 被重新发现。如果更新时报错，请先检查目标目录是否存在，以及本地修改是否与远端冲突；不要直接删除现有目录。
 
 ## 使用方法
 
